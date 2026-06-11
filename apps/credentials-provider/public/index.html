@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Walletly — Credentials Provider</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root { --bg:#f6f5fa; --card:#fff; --ink:#16181d; --muted:#6b7280; --line:#e5e7eb; --accent:#7c3aed; --mono:'IBM Plex Mono',monospace; }
+*{box-sizing:border-box} body{margin:0;font-family:'Schibsted Grotesk',sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:18px 28px;background:var(--card);border-bottom:1px solid var(--line)}
+header .logo{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+header h1{font-size:17px;margin:0} header .sub{font-size:12px;color:var(--muted)}
+main{padding:22px 28px 40px;display:grid;grid-template-columns:340px 1fr;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+.pm{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:linear-gradient(135deg,#312e81,#6d28d9);color:#fff}
+.pm.bank{background:linear-gradient(135deg,#064e3b,#0d9488)}
+.pm .net{font-weight:700;letter-spacing:.08em;font-size:12px;text-transform:uppercase}
+.pm .num{font-family:var(--mono);font-size:16px;margin:10px 0 4px}
+.pm .meta{font-size:11px;opacity:.8;display:flex;justify-content:space-between}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;background:#ede9fe;color:#5b21b6}
+.mono{font-family:var(--mono);font-size:11.5px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td,th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+.log{font-family:var(--mono);font-size:11.5px;max-height:260px;overflow:auto;background:#1e1b4b;color:#ddd6fe;border-radius:10px;padding:12px;margin-top:10px}
+.log .k{color:#c4b5fd}.log .t{color:#6d6a92}
+.keyrow{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px}
+details pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:10.5px;overflow:auto;max-height:240px;margin:6px 0 0}
+.plbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:8px 0 3px}
+.pin{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;background:#fff}
+.pbtn{flex:1;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 10px;font-weight:600;font-size:12px;cursor:pointer;font-family:inherit}
+.pbtn.ghost{background:#ede9fe;color:#5b21b6}
+/* merchant allowlist chips + autocomplete */
+.chips{display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff;position:relative}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#5b21b6;border-radius:99px;padding:3px 9px;font-size:12px;font-weight:600}
+.chip b{cursor:pointer;opacity:.6}.chip b:hover{opacity:1}
+.chips input{border:none;outline:none;flex:1;min-width:90px;font-family:inherit;font-size:12.5px;padding:4px}
+.suggest{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:0 0 10px 10px;box-shadow:0 8px 20px rgba(0,0,0,.08);z-index:5;max-height:170px;overflow:auto}
+.suggest div{padding:7px 10px;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.suggest div:hover,.suggest div.hot{background:#f5f3ff}
+.suggest .dot{width:9px;height:9px;border-radius:3px;flex:none}
+.chips-hint{font-size:11px;color:var(--muted);margin-top:4px}
+/* decoded JWS viewer */
+.jws-tabs{display:flex;gap:6px;margin-top:8px}
+.jws-tab{font-size:11px;font-weight:600;border:1px solid var(--line);border-radius:99px;padding:2px 10px;cursor:pointer;background:#fff;color:var(--muted)}
+.jws-tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.jws-part{margin-top:8px}
+.jws-part .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:700;margin-bottom:2px}
+.jws-sig{font-family:var(--mono);font-size:10.5px;color:var(--muted);word-break:break-all;background:#f8fafc;border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">W</div>
+  <div><h1>Walletly — Credentials Provider</h1><div class="sub">User wallet · device-key mandate signing · single-use network tokens · AP2 Credentials Provider role</div></div>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <h2 id="user-h">Wallet</h2>
+      <div id="cards"></div>
+      <div class="keyrow" id="keys"></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2>Agent permissions · spend controls</h2>
+      <div id="policy-form" style="font-size:12.5px">
+        <label class="plbl">Autonomy</label>
+        <select id="p-autonomy" class="pin">
+          <option value="always_ask">Always ask me (never autonomous)</option>
+          <option value="ask_above">Autonomous below a threshold</option>
+          <option value="autonomous">Fully autonomous</option>
+        </select>
+        <div id="p-threshold-row"><label class="plbl">Autonomous up to ($)</label><input id="p-threshold" class="pin" type="number" min="0" step="10"/></div>
+        <label class="plbl">Per-transaction cap ($)</label><input id="p-cap" class="pin" type="number" min="0" step="10"/>
+        <label class="plbl">Total budget ($)</label><input id="p-budget" class="pin" type="number" min="0" step="50"/>
+        <div id="p-spent" style="margin:6px 0 2px"></div>
+        <div id="p-bar" style="height:8px;border-radius:99px;background:#ede9fe;overflow:hidden;margin-bottom:8px"><div id="p-bar-fill" style="height:100%;background:var(--accent);width:0%"></div></div>
+        <label class="plbl">Allowed merchants (empty = any)</label>
+        <div class="chips" id="m-chips">
+          <input id="m-input" placeholder="type to search merchants…" autocomplete="off"/>
+          <div class="suggest" id="m-suggest" style="display:none"></div>
+        </div>
+        <div class="chips-hint" id="m-hint">No restriction — the agent may buy at any merchant.</div>
+        <label class="plbl">Preferred settlement rail</label>
+        <select id="p-rail" class="pin"><option value="auto">Auto (agent decides)</option><option value="card_network">Card network</option><option value="rtp">RTP · instant bank transfer</option></select>
+        <label class="plbl">Valid until</label><input id="p-until" class="pin" type="datetime-local"/>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="pbtn" onclick="savePolicy()">Save policy</button>
+          <button class="pbtn ghost" onclick="savePolicy(true)">Reset spent</button>
+        </div>
+        <div id="p-msg" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2>Approval inbox <span id="appr-count" class="badge" style="display:none"></span></h2>
+      <div id="approvals" style="font-size:12.5px;color:var(--muted)">No pending approvals.</div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2>Passkey · Touch ID</h2>
+      <div id="passkey-card" style="font-size:12.5px;color:var(--muted)">—</div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2>Consent audit · policy changes</h2>
+      <div id="audit" style="font-size:12px;color:var(--muted);max-height:220px;overflow:auto">No changes yet.</div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:10px">Signed mandates (user device key)
+        <select id="m-filter" class="pin" style="width:auto;font-size:11.5px;padding:4px 8px" onchange="sigs['mandates']=null;load()">
+          <option value="">all kinds</option><option>IntentMandate</option><option>CartMandate</option><option>PaymentMandate</option><option>CheckoutMandate</option>
+        </select>
+      </h2>
+      <table id="mandates"><tr><th>Kind</th><th>ID</th><th>Approved via</th><th>Signed</th><th>JWS</th></tr></table>
+      <h2 style="margin-top:18px">Minted tokens</h2>
+      <table id="tokens"><tr><th>Token</th><th>Instrument</th><th>Rail</th><th>Checkout</th><th>Status</th></tr></table>
+      <h2 style="margin-top:18px">Activity</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</main>
+<script>
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+const $=id=>document.getElementById(id);
+
+/* ============ decoded JWS / SD-JWT viewer ============ */
+function b64uDecode(s){ try{ return atob(s.replace(/-/g,'+').replace(/_/g,'/')); }catch{ return null; } }
+function b64uJson(s){ try{ return JSON.parse(b64uDecode(s)); }catch{ return null; } }
+function pretty(o){ return esc(JSON.stringify(o,null,2)); }
+function jwtBlock(label, jwt){
+  const [h,p,sig]=jwt.split('.');
+  const hd=b64uJson(h), pl=p?b64uJson(p):null;
+  return `<div class="jws-part"><div class="lbl">${label} · header</div><pre>${pretty(hd)}</pre></div>`+
+         (p===''?`<div class="jws-part"><div class="lbl">${label} · payload</div><pre>(detached — the signature covers JCS(checkout − ap2), not an embedded payload)</pre></div>`
+                :`<div class="jws-part"><div class="lbl">${label} · payload</div><pre>${pretty(pl)}</pre></div>`)+
+         `<div class="jws-part"><div class="lbl">${label} · signature (ES256, raw r||s)</div><div class="jws-sig">${esc(sig||'')}</div></div>`;
+}
+function decodeJwsHtml(jws){
+  if(jws.includes('~')){
+    // SD-JWT(+kb): <issuer-jwt>~<disclosure>*~<kb-jwt>
+    const parts=jws.split('~');
+    const issuer=parts[0];
+    const last=parts[parts.length-1];
+    const kb=last.split('.').length===3?last:null;
+    const disclosures=parts.slice(1, kb?parts.length-1:parts.length).filter(Boolean);
+    let html=jwtBlock('Issuer JWT (CP service key)', issuer);
+    disclosures.forEach((d,i)=>{ html+=`<div class="jws-part"><div class="lbl">Disclosure ${i+1} · [salt, claim, value]</div><pre>${pretty(b64uJson(d))}</pre></div>`; });
+    if(kb) html+=jwtBlock('Key-binding JWT (user device key · typ kb+jwt)', kb);
+    return html;
+  }
+  return jwtBlock('JWS', jws);
+}
+function jwsCell(m, idx){
+  return `<details data-id="${esc(m.id)}">
+    <summary class="mono" style="cursor:pointer">${esc(m.jws.slice(0,28))}…</summary>
+    <div class="jws-tabs">
+      <span class="jws-tab on" onclick="jwsTab(this,'dec')">Decoded</span>
+      <span class="jws-tab" onclick="jwsTab(this,'raw')">Raw</span>
+    </div>
+    <div data-tab="dec">${decodeJwsHtml(m.jws)}</div>
+    <div data-tab="raw" style="display:none"><pre>${esc(m.jws)}</pre></div>
+  </details>`;
+}
+function jwsTab(el, which){
+  const det=el.closest('details');
+  det.querySelectorAll('.jws-tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  det.querySelector('[data-tab="dec"]').style.display = which==='dec'?'block':'none';
+  det.querySelector('[data-tab="raw"]').style.display = which==='raw'?'block':'none';
+}
+
+/* ============ change-aware rendering (no more refresh-wipe) ============ */
+const sigs={};
+function renderIf(key, data, fn){
+  const sig=JSON.stringify(data);
+  if(sigs[key]===sig) return;          // nothing changed → leave the DOM alone
+  sigs[key]=sig;
+  // preserve open <details> + active tab across a re-render
+  const host=$(key);
+  const open=[...host.querySelectorAll('details[open]')].map(d=>({
+    id:d.getAttribute('data-id'),
+    raw:d.querySelector('.jws-tab:nth-child(2)')?.classList.contains('on'),
+  }));
+  fn(host);
+  for(const o of open){
+    const d=host.querySelector(`details[data-id="${CSS.escape(o.id??'')}"]`);
+    if(d){ d.setAttribute('open',''); if(o.raw){ const t=d.querySelectorAll('.jws-tab')[1]; if(t) jwsTab(t,'raw'); } }
+  }
+}
+
+/* ============ merchant allowlist — chips + autocomplete ============ */
+let knownMerchants=[]; // [{id,name,color}]
+let chips=[];          // selected merchant ids
+let policyDirty=false;
+fetch('/api/wallet/merchants').then(r=>r.json()).then(j=>{ knownMerchants=j.merchants||[]; });
+
+function renderChips(){
+  const box=$('m-chips');
+  box.querySelectorAll('.chip').forEach(c=>c.remove());
+  const input=$('m-input');
+  for(const id of chips){
+    const m=knownMerchants.find(x=>x.id===id);
+    const el=document.createElement('span');
+    el.className='chip';
+    el.innerHTML=`${esc(m?m.name:id)} <b onclick="removeChip('${esc(id)}')">×</b>`;
+    box.insertBefore(el, input);
+  }
+  $('m-hint').textContent = chips.length
+    ? `Purchases allowed only at: ${chips.join(', ')}.`
+    : 'No restriction — the agent may buy at any merchant.';
+}
+function removeChip(id){ chips=chips.filter(x=>x!==id); policyDirty=true; renderChips(); }
+function addChip(id){ if(!chips.includes(id)){ chips.push(id); policyDirty=true; } $('m-input').value=''; hideSuggest(); renderChips(); }
+function hideSuggest(){ $('m-suggest').style.display='none'; }
+function showSuggest(){
+  const q=$('m-input').value.trim().toLowerCase();
+  const opts=knownMerchants.filter(m=>!chips.includes(m.id)&&(m.id.includes(q)||m.name.toLowerCase().includes(q)));
+  const box=$('m-suggest');
+  if(!opts.length){ hideSuggest(); return; }
+  box.innerHTML=opts.map(m=>`<div onmousedown="addChip('${esc(m.id)}')"><span class="dot" style="background:${m.color||'#999'}"></span><b>${esc(m.name)}</b>&nbsp;<span class="mono" style="color:var(--muted)">${esc(m.id)}</span></div>`).join('');
+  box.style.display='block';
+}
+$('m-input').addEventListener('input',showSuggest);
+$('m-input').addEventListener('focus',showSuggest);
+$('m-input').addEventListener('blur',()=>setTimeout(hideSuggest,150));
+$('m-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const q=e.target.value.trim().toLowerCase();
+    const m=knownMerchants.find(x=>x.id===q||x.name.toLowerCase()===q)||knownMerchants.find(x=>x.id.includes(q)||x.name.toLowerCase().includes(q));
+    if(m) addChip(m.id);
+  }
+  if(e.key==='Backspace'&&!e.target.value&&chips.length) removeChip(chips[chips.length-1]);
+});
+
+/* ============ policy form ============ */
+document.addEventListener('input',e=>{ if(e.target.closest&&e.target.closest('#policy-form')) policyDirty=true; });
+document.addEventListener('change',e=>{ if(e.target.id==='p-autonomy') $('p-threshold-row').style.display=e.target.value==='ask_above'?'block':'none'; });
+
+function fillPolicy(p){
+  // spent meter always updates; the editable fields only when not dirty
+  const pct=Math.min(100,Math.round(100*p.spent/Math.max(1,p.budget)));
+  $('p-spent').innerHTML=`spent <b>$${(p.spent/100).toFixed(2)}</b> of $${(p.budget/100).toFixed(2)} (${pct}%)`;
+  $('p-bar-fill').style.width=pct+'%';
+  $('p-bar-fill').style.background=pct>85?'#dc2626':'var(--accent)';
+  if(policyDirty) return;
+  $('p-autonomy').value=p.autonomy;
+  $('p-threshold').value=(p.ask_above_amount/100).toFixed(0);
+  $('p-threshold-row').style.display=p.autonomy==='ask_above'?'block':'none';
+  $('p-cap').value=(p.per_tx_cap/100).toFixed(0);
+  $('p-budget').value=(p.budget/100).toFixed(0);
+  chips=(p.merchants_allowed||[]).slice(); renderChips();
+  $('p-rail').value=p.preferred_rail;
+  try{$('p-until').value=new Date(p.valid_until).toISOString().slice(0,16);}catch{}
+}
+
+async function savePolicy(resetSpent){
+  const body={
+    autonomy:$('p-autonomy').value,
+    ask_above_amount:Math.round(Number($('p-threshold').value||0)*100),
+    per_tx_cap:Math.round(Number($('p-cap').value||0)*100),
+    budget:Math.round(Number($('p-budget').value||0)*100),
+    merchants_allowed:chips,
+    preferred_rail:$('p-rail').value,
+    valid_until:$('p-until').value?new Date($('p-until').value).toISOString():undefined,
+    reset_spent:!!resetSpent,
+  };
+  const r=await fetch('/api/wallet/policy',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  policyDirty=false; fillPolicy(j.policy);
+  $('p-msg').textContent='Saved · enforced at mint_instrument + sign_mandate, snapshot travels in the token to the PSP. '+new Date().toLocaleTimeString();
+}
+
+/* ============ polling (change-aware) ============ */
+async function decideApproval(id,decision){
+  await fetch('/api/wallet/approval',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,decision})});
+  sigs['approvals']=null; load();
+}
+async function removePasskey(){
+  if(!confirm('Remove the enrolled passkey? Checkout signing falls back to the simulated approval.'))return;
+  await fetch('/api/wallet/passkey/remove',{method:'POST'}); sigs['passkey-card']=null; load();
+}
+async function revokeToken(tok){
+  await fetch('/api/wallet/token/revoke',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:tok})});
+  sigs['tokens']=null; load();
+}
+
+async function load(){
+  const r=await fetch('/api/wallet/state'); const s=await r.json();
+  if(s.policy) fillPolicy(s.policy);
+
+  /* approval inbox */
+  renderIf('approvals', s.approvals||[], host=>{
+    const list=(s.approvals||[]);
+    const pend=list.filter(a=>a.status==='pending');
+    const cnt=document.getElementById('appr-count');
+    cnt.style.display=pend.length?'inline-block':'none'; cnt.textContent=pend.length+' pending';
+    host.innerHTML=list.slice(0,6).map(a=>`
+      <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;${a.status==='pending'?'border-color:var(--accent)':''}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <b style="color:var(--ink)">$${((a.amount||0)/100).toFixed(2)}</b>
+          <span>${esc(a.merchant_name||a.merchant_id||'')}</span>
+          <span class="badge" style="margin-left:auto;${a.status==='approved'?'background:#d1fae5;color:#065f46':a.status==='denied'?'background:#fee2e2;color:#991b1b':''}">${a.status}</span>
+        </div>
+        <div style="font-size:11px;margin:3px 0">${esc(a.summary||a.checkout_id)} · ${new Date(a.requested_at).toLocaleTimeString()}</div>
+        ${a.status==='pending'?`<div style="display:flex;gap:8px;margin-top:6px">
+          <button class="pbtn" onclick="decideApproval('${a.id}','approved')">Approve</button>
+          <button class="pbtn ghost" onclick="decideApproval('${a.id}','denied')">Deny</button></div>`:''}
+      </div>`).join('')||'No pending approvals.';
+  });
+
+  /* passkey card */
+  renderIf('passkey-card', s.passkey, host=>{
+    const pk=s.passkey||{};
+    host.innerHTML = !pk.enabled
+      ? 'Passkeys disabled (<span class="mono">PASSKEYS=0</span>).'
+      : pk.enrolled
+        ? `<div><span class="badge" style="background:#d1fae5;color:#065f46">enrolled</span>
+           <div class="mono" style="margin:6px 0">credential ${esc((pk.credential_id||'').slice(0,22))}…</div>
+           <div style="font-size:11px">rp_id <b>${esc(pk.rp_id)}</b>${pk.enrolled_at?' · since '+new Date(pk.enrolled_at).toLocaleTimeString():''}</div>
+           <div style="font-size:11px;margin:4px 0">Checkout-mandate signing requires a Touch ID assertion bound to the exact terms.</div>
+           <button class="pbtn ghost" style="margin-top:6px" onclick="removePasskey()">Remove passkey</button></div>`
+        : `<span class="badge">not enrolled</span><div style="font-size:11px;margin-top:5px">Enrol from the payment sheet in Shoppy ("Set up Touch ID &amp; pay"). Until then, approval is simulated.</div>`;
+  });
+
+  /* consent audit */
+  renderIf('audit', s.policy_audit||[], host=>{
+    const fmt=v=>Array.isArray(v)?(v.length?v.join(','):'any'):(typeof v==='number'&&v>1000?'$'+(v/100).toFixed(0):String(v));
+    host.innerHTML=(s.policy_audit||[]).map(e=>`
+      <div style="border-bottom:1px dashed var(--line);padding:6px 0">
+        <span class="mono" style="color:var(--accent)">${new Date(e.ts).toLocaleTimeString()}</span>
+        ${Object.entries(e.changes).map(([k,c])=>`<div style="margin-left:8px">${k}: <s>${esc(fmt(c.from))}</s> → <b style="color:var(--ink)">${esc(fmt(c.to))}</b></div>`).join('')}
+      </div>`).join('')||'No changes yet.';
+  });
+  $('user-h').textContent='Wallet · '+s.user.name;
+  renderIf('cards', s.payment_methods, host=>{
+    host.innerHTML=s.payment_methods.map(m=>`
+      <div class="pm ${m.type==='bank_account'?'bank':''}"><div class="net">${m.network}${m.rail==='rtp'?' · instant':''}</div><div class="num">•••• •••• •••• ${m.last4}</div>
+      <div class="meta"><span>${esc(m.display)}</span><span>${m.exp==='—'?'RTP rail':'exp '+m.exp}</span></div>
+      <div style="margin-top:8px">${m.default?'<span class="badge">default</span> ':''}${m.agentic_ready?'<span class="badge">agentic-ready</span>':''}</div></div>`).join('');
+  });
+  renderIf('keys', s.keys, host=>{
+    host.innerHTML=`service key: <b>${s.keys.service.kid}</b><br>user device key: <b>${s.keys.user_device.kid}</b><br>both published as JWKs at /.well-known/ucp — PKI, no DIDs`;
+  });
+  const mf=document.getElementById('m-filter').value;
+  const mshown=mf?s.mandates.filter(m=>m.kind===mf):s.mandates;
+  renderIf('mandates', mshown.map(m=>m.id+m.signed_at), host=>{
+    host.innerHTML='<tr><th>Kind</th><th>ID</th><th>Approved via</th><th>Signed</th><th>JWS</th></tr>'+
+      mshown.map(m=>`<tr><td><b>${m.kind}</b></td><td class="mono">${m.id}</td><td style="font-size:11px">${esc(m.approved_via)}</td><td style="font-size:11px">${new Date(m.signed_at).toLocaleTimeString()}</td><td>${jwsCell(m)}</td></tr>`).join('');
+  });
+  renderIf('tokens', s.tokens.map(t=>t.token+t.used+(t.revoked?'r':'')), host=>{
+    host.innerHTML='<tr><th>Token</th><th>Instrument</th><th>Rail</th><th>Checkout</th><th>Status</th></tr>'+
+      s.tokens.map(t=>`<tr><td class="mono">${t.token.slice(0,20)}…</td><td>${t.network} •••• ${t.last4}</td><td><span class="badge">${t.rail||'card_network'}</span></td><td class="mono">${t.context.checkout_id||'—'}</td><td><span class="badge" ${t.revoked?'style="background:#fee2e2;color:#991b1b"':''}>${t.revoked?'revoked':t.used?'consumed':'active'}</span>${!t.used&&!t.revoked?` <button class="pbtn ghost" style="padding:2px 8px;font-size:10.5px" onclick="revokeToken('${t.token}')">revoke</button>`:''}</td></tr>`).join('');
+  });
+  renderIf('log', s.activity.length?s.activity[0].ts+''+s.activity.length:'0', host=>{
+    host.innerHTML=s.activity.map(a=>`<div><span class="t">${new Date(a.ts).toLocaleTimeString()}</span> <span class="k">${a.kind}</span> ${esc(a.summary)}</div>`).join('')||'—';
+  });
+}
+load(); setInterval(load,2500);
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{
+  "name": "ucp-ap2-suite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Full UCP + AP2 reference implementation: Shopping Agent, Merchant Portal (+Merchant Agent), Credentials Provider, Payment Provider. JSON-RPC 2.0 + PKI (no DID).",
+  "scripts": {
+    "dev": "concurrently -n agent,merchant,credentials,payments -c blue,green,magenta,yellow \"npm run dev:agent\" \"npm run dev:merchant\" \"npm run dev:credentials\" \"npm run dev:payments\"",
+    "dev:ngrok": "tsx scripts/dev-ngrok.ts",
+    "stop": "bash scripts/stop.sh",
+    "dev:agent": "tsx apps/shopping-agent/src/server.ts",
+    "dev:merchant": "tsx apps/merchant-portal/src/server.ts",
+    "dev:credentials": "tsx apps/credentials-provider/src/server.ts",
+    "dev:payments": "tsx apps/payment-provider/src/server.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "validate": "tsx scripts/validate-compliance.ts",
+    "conformance": "tsx scripts/conformance.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

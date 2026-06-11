@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UCP + AP2 Reference Suite — Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --ink:#16181d; --muted:#667085; --line:#e5e7eb;
+  --accent:#4f46e5; --accent-soft:#eef0ff; --teal:#0d9488; --violet:#7c3aed; --amber:#ca8a04; --blue:#2563eb;
+  --green:#059669; --red:#dc2626; --code-bg:#0f172a; --code-ink:#cbd5e1; --code-key:#5eead4; --code-str:#fca5a5; --code-num:#fcd34d;
+  --mono:'IBM Plex Mono',ui-monospace,monospace; --sans:'Schibsted Grotesk',system-ui,sans-serif;
+  --radius:14px; --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px -12px rgba(16,24,40,.12);
+}
+html[data-theme=dark]{
+  --bg:#0d1017; --card:#161a23; --ink:#e7eaf0; --muted:#8b93a7; --line:#262c3a;
+  --accent:#818cf8; --accent-soft:#1e2240; --code-bg:#0a0d14; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);line-height:1.65;font-size:15.5px}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--accent);padding:1px 6px;border-radius:6px}
+.layout{display:grid;grid-template-columns:280px 1fr;max-width:1340px;margin:0 auto}
+@media(max-width:980px){.layout{grid-template-columns:1fr}.sidebar{display:none}}
+
+/* ---------- sidebar ---------- */
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:26px 18px;border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+.brand .logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--violet));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;flex:none}
+.brand b{font-size:15px;line-height:1.25;display:block}
+.brand span{font-size:11px;color:var(--muted)}
+.progress-wrap{height:4px;background:var(--line);border-radius:99px;margin:16px 0 20px;overflow:hidden}
+.progress{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--violet));transition:width .15s}
+.nav-group{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:18px 8px 6px}
+.nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;color:var(--ink);font-size:13.5px;font-weight:500}
+.nav a:hover{background:var(--accent-soft);text-decoration:none}
+.nav a.active{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.nav .lvl{margin-left:auto;font-size:9px;font-weight:700;padding:1px 7px;border-radius:99px;flex:none}
+.lvl.l1{background:#d1fae5;color:#065f46}.lvl.l2{background:#fef3c7;color:#92400e}.lvl.l3{background:#fee2e2;color:#991b1b}
+html[data-theme=dark] .lvl.l1{background:#064e3b;color:#6ee7b7}html[data-theme=dark] .lvl.l2{background:#451a03;color:#fcd34d}html[data-theme=dark] .lvl.l3{background:#450a0a;color:#fca5a5}
+.theme-btn{margin-top:18px;width:100%;padding:9px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:var(--sans);font-weight:600;font-size:13px;cursor:pointer}
+
+/* ---------- main ---------- */
+main{padding:34px 44px 120px;min-width:0}
+.hero{background:linear-gradient(135deg,var(--accent),var(--violet));border-radius:22px;color:#fff;padding:46px 48px;margin-bottom:42px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-80px;top:-80px;width:340px;height:340px;border-radius:50%;background:rgba(255,255,255,.08)}
+.hero h1{margin:0 0 10px;font-size:34px;font-weight:800;letter-spacing:-.02em}
+.hero p{margin:0;max-width:640px;font-size:16.5px;opacity:.94}
+.hero .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+.hero .pill{background:rgba(255,255,255,.16);backdrop-filter:blur(4px);padding:5px 14px;border-radius:99px;font-size:12.5px;font-weight:600}
+section{margin-bottom:64px;scroll-margin-top:24px}
+h2{font-size:25px;font-weight:800;letter-spacing:-.015em;margin:0 0 6px;display:flex;align-items:center;gap:12px}
+h2 .num{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+h3{font-size:17px;font-weight:700;margin:28px 0 8px}
+.lede{color:var(--muted);font-size:15px;margin:0 0 20px;max-width:760px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;box-shadow:var(--shadow);margin:14px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+.actor{border-top:4px solid var(--c,var(--accent))}
+.actor .t{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
+.actor .port{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.actor p{font-size:13.5px;color:var(--muted);margin:8px 0 0}
+.actor.clickable{cursor:pointer;transition:transform .15s, box-shadow .15s}
+.actor.clickable:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(20,20,60,.10)}
+.actor.active{outline:2px solid var(--c);outline-offset:2px}
+.actor .more{margin-top:10px;font-size:11.5px;font-weight:700;color:var(--c,var(--accent))}
+.actor-detail{display:none;margin-top:16px;border:1.5px solid var(--c,var(--line));border-radius:16px;background:var(--card);overflow:hidden;animation:adfade .25s ease}
+@keyframes adfade{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.actor-detail .ad-head{display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid var(--line);background:color-mix(in srgb, var(--c) 7%, var(--card))}
+.actor-detail .ad-head .tt{font-weight:800;font-size:17px}
+.actor-detail .ad-head .role{font-size:11.5px;color:var(--muted)}
+.actor-detail .ad-head .x{margin-left:auto;border:1px solid var(--line);background:var(--card);border-radius:8px;color:var(--muted);cursor:pointer;font-size:13px;padding:3px 10px;font-family:inherit}
+.actor-detail .ad-body{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.actor-detail .ad-col{padding:18px 22px}
+.actor-detail .ad-col + .ad-col{border-left:1px solid var(--line)}
+.actor-detail h5{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--c,var(--accent))}
+.actor-detail h5:not(:first-child){margin-top:16px}
+.actor-detail p, .actor-detail li{font-size:13px;color:var(--muted);line-height:1.55}
+.actor-detail p{margin:0 0 6px}
+.actor-detail ul{margin:0;padding-left:17px}
+.actor-detail li{margin:3px 0}
+.actor-detail .try{display:inline-block;margin-top:10px;font-size:12px;font-weight:700;color:var(--c,var(--accent))}
+@media (max-width:840px){.actor-detail .ad-body{grid-template-columns:1fr}.actor-detail .ad-col + .ad-col{border-left:none;border-top:1px solid var(--line)}}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 12px 12px 0;padding:14px 18px;margin:16px 0;font-size:14px}
+.callout b:first-child{color:var(--accent)}
+.callout.warn{border-color:var(--amber);background:rgba(202,138,4,.08)}
+.callout.warn b:first-child{color:var(--amber)}
+.callout.danger{border-color:var(--red);background:rgba(220,38,38,.07)}
+.callout.danger b:first-child{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left}
+td,th{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+td code{white-space:nowrap}
+.mono{font-family:var(--mono);font-size:12px}
+
+/* code blocks */
+.codeblock{position:relative;background:var(--code-bg);border-radius:12px;margin:12px 0;overflow:hidden}
+.codeblock pre{margin:0;padding:18px 18px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.3px;line-height:1.6;color:var(--code-ink)}
+.codeblock .k{color:var(--code-key)} .codeblock .s{color:var(--code-str)} .codeblock .n{color:var(--code-num)} .codeblock .c{color:#64748b;font-style:italic}
+.copy{position:absolute;top:9px;right:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#cbd5e1;font-size:11px;font-family:var(--sans);font-weight:600;border-radius:7px;padding:4px 11px;cursor:pointer}
+.copy:hover{background:rgba(255,255,255,.16)}
+/* tabs */
+.tabs{display:flex;gap:6px;margin:14px 0 0}
+.tabs button{border:1px solid var(--line);background:var(--card);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px 9px 0 0;border-bottom:none;cursor:pointer}
+.tabs button.on{background:var(--code-bg);color:#fff;border-color:var(--code-bg)}
+.tabpanes>div{display:none}.tabpanes>div.on{display:block}
+.tabpanes .codeblock{margin-top:0;border-top-left-radius:0}
+/* steps (interactive journey) */
+.journey{display:grid;grid-template-columns:300px 1fr;gap:18px}
+@media(max-width:860px){.journey{grid-template-columns:1fr}}
+.steps{display:flex;flex-direction:column;gap:6px}
+.step{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:11px;border:1px solid var(--line);background:var(--card);cursor:pointer;transition:all .15s}
+.step:hover{border-color:var(--accent)}
+.step.on{border-color:var(--accent);background:var(--accent-soft)}
+.step .dot{width:24px;height:24px;border-radius:8px;background:var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none;margin-top:1px}
+.step.on .dot{background:var(--accent);color:#fff}
+.step b{font-size:13.5px;display:block}
+.step span{font-size:11.5px;color:var(--muted)}
+.step .tag{font-size:9px;font-weight:800;letter-spacing:.05em;padding:1px 6px;border-radius:5px;margin-left:6px;vertical-align:1px}
+.tag.ucp{background:var(--accent-soft);color:var(--accent)} .tag.ap2{background:rgba(124,58,237,.12);color:var(--violet)} .tag.pki{background:rgba(5,150,105,.12);color:var(--green)}
+.step-detail{position:sticky;top:18px;align-self:start}
+details{border:1px solid var(--line);border-radius:11px;padding:0;margin:10px 0;background:var(--card)}
+details summary{cursor:pointer;font-weight:600;font-size:14px;padding:13px 18px;list-style:none;display:flex;align-items:center}
+details summary::before{content:"▸";margin-right:10px;color:var(--accent);transition:transform .15s;display:inline-block}
+details[open] summary::before{transform:rotate(90deg)}
+details .body{padding:0 18px 16px}
+.kv{display:grid;grid-template-columns:190px 1fr;gap:6px 14px;font-size:13.5px;margin:8px 0}
+.kv .k{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:600}
+svg text{font-family:var(--sans)} svg .m{font-family:var(--mono)}
+.diagram{width:100%;height:auto;margin:8px 0}
+.footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:24px}
+.badge-row{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.badge-row .lvl{font-size:10px;padding:3px 10px;border-radius:99px;font-weight:700}
+
+/* mermaid sequence diagrams */
+pre.mermaid{background:transparent;border:none;padding:6px 0 0;margin:0;text-align:center;overflow-x:auto;font-family:inherit;line-height:1.2}
+pre.mermaid svg{max-width:100%;height:auto}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ======================= SIDEBAR ======================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="logo">U·A</div>
+    <div><b>UCP + AP2 Suite</b><span>Reference documentation</span></div>
+  </div>
+  <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+  <nav class="nav" id="nav">
+    <div class="nav-group">Start here</div>
+    <a href="#intro">What is this?<span class="lvl l1">intro</span></a>
+    <a href="#actors">The four services<span class="lvl l1">intro</span></a>
+    <a href="#architecture">Architecture<span class="lvl l1">intro</span></a>
+    <a href="#journey">A purchase, step by step<span class="lvl l1">intro</span></a>
+    <a href="#sequences">Sequence diagrams<span class="lvl l2">core</span></a>
+    <div class="nav-group">The protocols</div>
+    <a href="#wellknown">Discovery &amp; .well-known<span class="lvl l2">core</span></a>
+    <a href="#jsonrpc">JSON-RPC 2.0 &amp; MCP<span class="lvl l2">core</span></a>
+    <a href="#ucp">UCP in depth<span class="lvl l2">core</span></a>
+    <div class="nav-group">Security</div>
+    <a href="#signatures">PKI &amp; HTTP signatures<span class="lvl l2">core</span></a>
+    <a href="#ap2">AP2 &amp; mandates<span class="lvl l3">deep</span></a>
+    <a href="#threat">Threat model<span class="lvl l3">deep</span></a>
+    <a href="#controls">Agent-economy controls<span class="lvl l3">deep</span></a>
+    <div class="nav-group">Operations</div>
+    <a href="#observability">Logs &amp; tracing<span class="lvl l2">core</span></a>
+    <a href="#conformance">Schema conformance<span class="lvl l3">deep</span></a>
+    <a href="#reference">Reference<span class="lvl l1">ref</span></a>
+  </nav>
+  <button class="theme-btn" onclick="toggleTheme()">◐ Toggle dark mode</button>
+</aside>
+
+<!-- ======================= MAIN ======================= -->
+<main>
+
+<div class="hero">
+  <h1>Agentic Commerce, end to end</h1>
+  <p>A complete working implementation of the <b>Universal Commerce Protocol (UCP 2026-04-08)</b> and the
+  <b>Agent Payments Protocol (AP2)</b>: an AI shopping agent that discovers merchants, negotiates capabilities,
+  builds carts, and pays — with every step cryptographically signed, verified, and auditable.</p>
+  <div class="pills">
+    <span class="pill">4 microservices</span><span class="pill">JSON-RPC 2.0 / MCP</span>
+    <span class="pill">PKI · no DIDs</span><span class="pill">RFC 9421 signatures</span>
+    <span class="pill">AP2 mandates · SD-JWT+kb</span><span class="pill">51 e2e + 20 schema + 28 conformance</span><span class="pill">15 demo scenarios</span>
+  </div>
+</div>
+
+<!-- ================== 1. INTRO ================== -->
+<section id="intro">
+  <h2><span class="num">1</span>What is this project?</h2>
+  <p class="lede">Read this first if you're new — no protocol knowledge required.</p>
+
+  <div class="card">
+    <p style="margin-top:0">Imagine telling an AI assistant: <i>“Find me noise-cancelling headphones under $300, delivered in
+    2 days”</i> — and the assistant searches several stores, compares live prices, fills a cart, and <b>pays</b>, all by itself.
+    That raises two hard questions:</p>
+    <div class="grid2">
+      <div class="card" style="margin:0"><b>🛍 How do machines shop?</b>
+        <p style="font-size:13.5px;color:var(--muted);margin:6px 0 0">Web shops are built for humans clicking buttons. Agents need a
+        machine-readable, standard way to search catalogs, create checkouts and place orders at <i>any</i> store without custom
+        integrations. That standard is <b>UCP</b>.</p></div>
+      <div class="card" style="margin:0"><b>🔐 How do we trust an agent with money?</b>
+        <p style="font-size:13.5px;color:var(--muted);margin:6px 0 0">If an AI pays on your behalf, the merchant and the bank need
+        <i>cryptographic proof</i> that <b>you</b> authorized <b>exactly this purchase</b> — not the agent's hallucination of it.
+        That proof system is <b>AP2</b> and its signed <b>mandates</b>.</p></div>
+    </div>
+    <p style="margin-bottom:0">This repository implements both, as four small services you can run with one command
+    (<code>npm run dev</code>) and watch interacting in real time. The chat UI at
+    <code>localhost:4100</code> has a <b>Protocol trace</b> panel — every event in it is a real signed request on the wire,
+    not a simulation.</p>
+  </div>
+
+  <div class="callout"><b>How to read this page.</b> Sections are ordered from beginner to advanced — the colored badges in the
+  sidebar (<span class="lvl l1" style="padding:1px 8px;border-radius:99px;font-size:10px">intro</span>
+  <span class="lvl l2" style="padding:1px 8px;border-radius:99px;font-size:10px">core</span>
+  <span class="lvl l3" style="padding:1px 8px;border-radius:99px;font-size:10px">deep</span>) show the depth.
+  You can stop after section 4 and still understand what the system does.</div>
+</section>
+
+<!-- ================== 2. ACTORS ================== -->
+<section id="actors">
+  <h2><span class="num">2</span>The four services</h2>
+  <p class="lede">Each service plays one role from the UCP/AP2 ecosystem. They run as independent processes and only talk
+  to each other over signed JSON-RPC — exactly as separate companies would on the open internet. <b>Click a card</b> for
+  its purpose, internal architecture and implementation details.</p>
+  <div class="grid4">
+    <div class="card actor clickable" id="actor-card-agent" style="--c:var(--accent)" onclick="showActor('agent')">
+      <div class="t">🤖 Shopping Agent <span class="port">:4100</span></div>
+      <p><b>“Shoppy”</b> — the UCP <i>Platform</i> and AP2 <i>Shopping Agent</i>. Hosts the chat UI (manual, LLM chat,
+      autonomous agent, 24-flow scenario console), discovers merchants, orchestrates the whole purchase and renders the
+      live protocol trace.</p>
+      <div class="more">Click for details ▾</div>
+    </div>
+    <div class="card actor clickable" id="actor-card-merchant" style="--c:var(--teal)" onclick="showActor('merchant')">
+      <div class="t">🏪 Merchant Portal <span class="port">:4101</span></div>
+      <p>Hosts <b>four UCP Businesses</b> (Wavelength, SoundHub, ElectroMart, AudioNest) with the integrated
+      <i>Merchant Agent</i>: catalog, cart, checkout lifecycle, AP2 verification, orders, refunds/disputes, OAuth identity
+      linking, signed webhooks and an operable dashboard.</p>
+      <div class="more">Click for details ▾</div>
+    </div>
+    <div class="card actor clickable" id="actor-card-cp" style="--c:var(--violet)" onclick="showActor('cp')">
+      <div class="t">👛 Credentials Provider <span class="port">:4102</span></div>
+      <p><b>“Walletly”</b> — the AP2 <i>Credentials Provider</i> and the user's consent surface: card vault (PCI scope),
+      user device key, SD-JWT+kb issuance, single-use tokens, spend policy, approval inbox, passkeys.</p>
+      <div class="more">Click for details ▾</div>
+    </div>
+    <div class="card actor clickable" id="actor-card-psp" style="--c:var(--amber)" onclick="showActor('psp')">
+      <div class="t">🏦 Payment Provider <span class="port">:4103</span></div>
+      <p><b>“PayStream”</b> — the PSP / AP2 <i>Merchant Payment Processor</i> plus the network trust layer: independent
+      mandate re-verification, multi-rail authorize/capture/refund, KYA agent registry, reputation, velocity rules.</p>
+      <div class="more">Click for details ▾</div>
+    </div>
+  </div>
+  <div id="actor-detail" class="actor-detail"></div>
+  <div class="callout"><b>Why four?</b> Separation of concerns <i>is</i> the security model: the agent never sees card numbers,
+  the merchant never sees the wallet, and the PSP trusts mathematics — not the agent's word.</div>
+
+  <script>
+  const ACTORS = {
+    agent: {
+      c: "var(--accent)", icon: "🤖", title: "Shopping Agent — “Shoppy” · :4100",
+      role: "UCP Platform · AP2 Shopping Agent · the BUYER side",
+      purpose: `Turns a natural-language intent ("ANC headphones under $300, 2-day") into a completed, cryptographically
+        authorized purchase — and proves every step. It is the only component the user talks to, and the only one that
+        orchestrates; it holds no card data and can spend nothing without the wallet's signed mandates.`,
+      arch: [
+        "<b>orchestrator.ts</b> — the protocol state machine per session: discovery → capability negotiation (intersection) → IntentMandate → federated search → checkout → CartMandate → rail selection → mint → Payment + Checkout mandates → complete → post-purchase. Also: 24 scenario flows, the audit hash-chain, evidence bundles, the OTLP exporter hook.",
+        "<b>agent-loop.ts</b> — two LLM modes: an autonomous tool-calling loop (search→select→checkout→pay) and the interactive chat (cart-building tools, deliberately <i>no pay tool</i> — the human pays via the sheet).",
+        "<b>nlu.ts</b> — intent parsing: deterministic regex with optional LLM upgrade (OpenAI/Anthropic), graceful fallback.",
+        "<b>server.ts</b> — platform profile, the signed-webhook receiver, and the local REST+SSE API that drives the React UI.",
+        "<b>public/</b> — React (in-browser Babel): chat, product cards, checkout card, Google-Pay sheet (passkey ceremony, method picker), protocol-trace inspector, scenario console.",
+      ],
+      impl: [
+        "Identity: one ES256 platform key, published as a JWK at <code>/.well-known/ucp</code>; every outbound tools/call is RFC 9421+9530-signed; merchant responses to <code>complete_checkout</code> are verified over <code>@status</code>.",
+        "Verifies <code>ap2.merchant_authorization</code> against the merchant's published JWK before asking the user to approve anything.",
+        "Client-side policy awareness: autonomy pre-check + approval requests before the CP would refuse; rail preview from the wallet policy.",
+        "Endpoints: <code>GET /.well-known/ucp</code> · <code>POST /webhooks/ucp</code> (signed) · <code>/api/*</code> (UI only). The agent is a <i>client</i> of everyone's MCP endpoints — it exposes none.",
+        "State: in-memory sessions (trace, mandates, checkout, chat history). OTel: set <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> for OTLP/JSON spans.",
+      ],
+      try: "Open localhost:4100 — run a purchase, watch the Protocol trace, export the evidence bundle."
+    },
+    merchant: {
+      c: "var(--teal)", icon: "🏪", title: "Merchant Portal · :4101",
+      role: "4 × UCP Business + integrated Merchant Agent · the SELL side · multi-tenant (the gateway pattern)",
+      purpose: `Proves that one service can host many independent merchants as compliant UCP endpoints — each tenant has its
+        own signing key, profile, catalog and order book. This is the demo's embodiment of the "agentic commerce gateway":
+        the merchant brings a catalog; signatures, mandates and verification are platform concerns.`,
+      arch: [
+        "<b>Tenant state</b> — per merchant: ES256 key, catalog (editable from the dashboard), carts, checkouts, orders, decline stats.",
+        "<b>Tool registry</b> — 16 tools across catalog / cart / checkout / order / post-order (see the per-tool reference below).",
+        "<b>Checkout engine</b> — totals rules (one subtotal, one total, negative discounts), shipping options, promo codes; the checkout is <b>re-signed on every mutation</b> (detached JWS over JCS(checkout − ap2)).",
+        "<b>Verification gauntlet</b> — at complete: KYA lookup → SD-JWT+kb verify → nested-binding self-check → terms match → intent ceiling → handler validation → PSP authorize/capture → Order + evidence.",
+        "<b>OAuth 2.0 AS per tenant</b> — RFC 8414 discovery, PKCE, scoped tokens (<code>order:read</code>) for identity linking.",
+        "<b>Webhook pusher</b> — signed order.shipped / delivered / refunded to the platform's declared webhook_url.",
+      ],
+      impl: [
+        "Endpoints per tenant: <code>/m/{id}/.well-known/ucp</code> · <code>/m/{id}/mcp</code> · <code>/m/{id}/.well-known/oauth-authorization-server</code> · <code>/oauth/*</code>; portal admin under <code>/api/portal/*</code> (catalog edit, ship / ship-late / deliver, analytics).",
+        "Error discipline: recoverable business outcomes as <code>messages[]</code> (BusinessError), protocol violations as JSON-RPC errors with UCP codes; idempotency cache with 409 on body mismatch.",
+        "Order records carry the full dispute evidence: checkout mandate, merchant_authorization, mandate ids, verification log, buyer-agent KYA snapshot.",
+        "Dashboard: per-tenant analytics (orders, revenue, AOV, rail mix, declines, refunds) and operable controls.",
+      ],
+      try: "Open localhost:4101 — edit a price, toggle stock, Ship LATE an order, inspect AP2 evidence per order."
+    },
+    cp: {
+      c: "var(--violet)", icon: "👛", title: "Credentials Provider — “Walletly” · :4102",
+      role: "AP2 Credentials Provider · the user's TRUST ANCHOR and consent surface",
+      purpose: `Everything the user must be able to trust lives here, and nothing secret ever leaves: the card vault (PCI
+        scope), the user's device key, the spend policy, the approval inbox and the passkey. Whoever controls this service
+        controls what the agent may do with money — which is why it is its own process, not part of the agent.`,
+      arch: [
+        "<b>Wallet vault</b> — payment methods with <code>pan_ref</code> secrets that are released only to the PSP after mandate verification; deterministic demo behaviors (3-DS card, declining card) + an RTP checking account (multi-rail).",
+        "<b>Policy engine</b> — checkPolicy(): per-tx cap, budget (+ live spent meter), merchant allowlist, validity window, autonomy with the approval-inbox waiver. Enforced at <b>mint</b> (gate 1) and <b>sign</b> (gate 2); the snapshot travels in the token for the PSP's gate 3.",
+        "<b>Mandate signer</b> — Intent/Cart/Payment as compact JWS by the device key; the Checkout Mandate as a real <b>SD-JWT+kb</b> (CP-issued, key-bound, aud = merchant, nonce = checkout, selective disclosure).",
+        "<b>Passkey subsystem</b> — WebAuthn/SPC (simplewebauthn): enrollment, and signing gated on an assertion whose challenge = SHA-256(JCS(checkout − ap2)) with UV=1 — real Touch ID over the exact terms.",
+        "<b>Token store</b> — single-use (≤2 releases for the 3-DS retry), user-revocable; budget accounted on first release.",
+        "<b>Consent records</b> — approval inbox, policy-change audit log, signed-mandate log with decoded-JWS viewer.",
+      ],
+      impl: [
+        "Tools (12): wallet, mint, sign, release, 3-DS resolve, policy read, approvals, passkeys — see the tool reference.",
+        "Keys: service key (SD-JWT issuer) + user device key (holder), both published at <code>/.well-known/ucp</code> — PKI, no DIDs.",
+        "Consent UI is same-origin REST (<code>/api/wallet/*</code>): policy editor with merchant autocomplete, approval inbox, passkey card, token revocation, consent audit.",
+        "Feature flags: <code>PASSKEYS=0</code> disables UV gating; everything degrades to the simulated trusted surface.",
+      ],
+      try: "Open localhost:4102 — set a $100 cap, watch a purchase get refused, approve one from the inbox, decode a mandate."
+    },
+    psp: {
+      c: "var(--amber)", icon: "🏦", title: "Payment Provider — “PayStream” · :4103",
+      role: "AP2 Merchant Payment Processor · the MONEY MOVER + network trust layer",
+      purpose: `Trusts mathematics, not parties: it re-verifies the entire mandate chain from scratch even though the
+        merchant already did, because in AP2 every money-moving hop must be independently convinced. It also plays the
+        payment network's emerging role: Know-Your-Agent registry, reputation, velocity — the machine-native fraud stack.`,
+      arch: [
+        "<b>Authorize pipeline (8 steps)</b> — mandate signature (CP JWKs) → KYA gate → velocity check → scope (expiry, amount, payee, checkout, cart link) → intent-mandate re-validation → release_credentials → token-bound policy re-check (gate 3) → issuer simulation (ok / 3-DS / decline).",
+        "<b>Multi-rail</b> — card-network tokens vs RTP instant settlement; the rail is recorded per transaction and charted.",
+        "<b>KYA registry</b> — agent records: level, status (suspendable), behavior-driven reputation (+1 capture, −8 decline, −10 velocity); served to merchants via <code>lookup_agent</code>.",
+        "<b>Velocity limiter</b> — rolling 60s window per agent (<code>PSP_VELOCITY_LIMIT</code>, default 60) → 429 <code>velocity_exceeded</code>.",
+        "<b>3-DS</b> — challenge ids + the bank step-up page at <code>/challenge/{id}</code> (the <code>continue_url</code> target).",
+      ],
+      impl: [
+        "Tools (5): authorize / capture / refund / get_payment / lookup_agent — all idempotent where money moves.",
+        "Transactions store the verified mandate JWS, the full verification log, signals, refunds, rail and agent — surfaced in the dashboard drill-in with a decoded-mandate viewer and a refund button.",
+        "Admin (demo) REST under <code>/api/psp/*</code>: suspend/restore agents, set the velocity limit, dashboard refunds — these drive the kya_blocked / velocity scenarios.",
+        "Dashboard: traffic charts (by rail / status / merchant), registry card with reputation history, velocity control.",
+      ],
+      try: "Open localhost:4103 — suspend the agent and watch purchases refuse everywhere; drill into a transaction."
+    }
+  };
+  function showActor(id){
+    const d = document.getElementById('actor-detail');
+    const cards = ['agent','merchant','cp','psp'];
+    const wasActive = document.getElementById('actor-card-'+id).classList.contains('active');
+    cards.forEach(c => document.getElementById('actor-card-'+c).classList.remove('active'));
+    if (wasActive) { d.style.display = 'none'; return; }
+    const a = ACTORS[id];
+    document.getElementById('actor-card-'+id).classList.add('active');
+    d.style.setProperty('--c', a.c);
+    d.innerHTML = `
+      <div class="ad-head"><span style="font-size:22px">${a.icon}</span>
+        <div><div class="tt">${a.title}</div><div class="role">${a.role}</div></div>
+        <button class="x" onclick="showActor('${id}')">✕ close</button></div>
+      <div class="ad-body">
+        <div class="ad-col">
+          <h5>Purpose</h5><p>${a.purpose}</p>
+          <h5>Architecture — inside the box</h5><ul>${a.arch.map(x=>'<li>'+x+'</li>').join('')}</ul>
+        </div>
+        <div class="ad-col">
+          <h5>Implementation details</h5><ul>${a.impl.map(x=>'<li>'+x+'</li>').join('')}</ul>
+          <span class="try">▶ ${a.try}</span>
+        </div>
+      </div>`;
+    d.style.display = 'block';
+    d.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+  </script>
+</section>
+
+<!-- ================== 3. ARCHITECTURE ================== -->
+<section id="architecture">
+  <h2><span class="num">3</span>Architecture</h2>
+  <p class="lede">Component-to-component communication, made explicit: <b>which edge speaks which protocol, over which
+  transport, with which compliance badge</b>. Solid arrows are JSON-RPC 2.0 <code>tools/call</code> over HTTP (the UCP
+  <b>MCP binding</b>) — every one of them RFC 9421-signed. Dashed teal is the signed order webhook (plain REST POST).
+  Gray edges are ordinary REST: profile discovery, OAuth 2.0 identity linking, the user's consent surface and the
+  3-DS step-up page.</p>
+
+  <div class="card">
+  <svg class="diagram" viewBox="0 0 1000 790" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+      <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="arrV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+      <marker id="arrM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="arrT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--teal)"/></marker>
+    </defs>
+
+    <!-- user / browser -->
+    <rect x="20" y="14" width="250" height="96" rx="14" fill="var(--accent-soft)" stroke="var(--accent)"/>
+    <text x="145" y="46" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">👤 User (browser)</text>
+    <text x="145" y="66" text-anchor="middle" font-size="10.5" fill="var(--muted)">Shoppy chat + GPay sheet + Touch ID</text>
+    <text x="145" y="83" text-anchor="middle" font-size="10.5" fill="var(--muted)">Walletly consent surface · 3-DS page</text>
+
+    <!-- discovery note -->
+    <rect x="560" y="14" width="420" height="76" rx="12" fill="none" stroke="var(--line)" stroke-dasharray="5 4"/>
+    <text x="770" y="40" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--ink)">Discovery (UCP · REST)</text>
+    <text x="770" y="58" text-anchor="middle" font-size="10.5" fill="var(--muted)">every party publishes GET /.well-known/ucp — unsigned, Cache-Control ≥60s</text>
+    <text x="770" y="74" text-anchor="middle" font-size="10.5" fill="var(--muted)">{ucp:{version, services, capabilities, payment_handlers}, signing_keys} → endpoints + JWKs</text>
+
+    <!-- agent -->
+    <rect x="20" y="208" width="260" height="158" rx="14" fill="var(--card)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="150" y="238" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">🤖 Shopping Agent · :4100</text>
+    <text x="150" y="257" text-anchor="middle" font-size="10.5" fill="var(--muted)">UCP Platform · AP2 Shopping Agent</text>
+    <text x="150" y="276" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">orchestrator · LLM loop · scenarios</text>
+    <text x="150" y="293" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">audit hash-chain · OTLP exporter</text>
+    <text x="150" y="312" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">/.well-known/ucp · /webhooks/ucp</text>
+    <text x="150" y="333" text-anchor="middle" font-size="10" fill="var(--green)">🔑 platform key (ES256 · published JWK)</text>
+
+    <!-- merchant -->
+    <rect x="620" y="160" width="360" height="220" rx="14" fill="var(--card)" stroke="var(--teal)" stroke-width="2"/>
+    <text x="800" y="188" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">🏪 Merchant Portal · :4101</text>
+    <text x="800" y="206" text-anchor="middle" font-size="10.5" fill="var(--muted)">4 UCP Businesses (multi-tenant) + Merchant Agent</text>
+    <g font-size="10">
+      <rect x="640" y="218" width="155" height="40" rx="9" fill="var(--accent-soft)"/><text x="717" y="235" text-anchor="middle" fill="var(--ink)" font-weight="600">Wavelength</text><text x="717" y="250" text-anchor="middle" class="m" fill="var(--muted)">/m/wavelength/mcp</text>
+      <rect x="805" y="218" width="155" height="40" rx="9" fill="var(--accent-soft)"/><text x="882" y="235" text-anchor="middle" fill="var(--ink)" font-weight="600">SoundHub</text><text x="882" y="250" text-anchor="middle" class="m" fill="var(--muted)">/m/soundhub/mcp</text>
+      <rect x="640" y="264" width="155" height="40" rx="9" fill="var(--accent-soft)"/><text x="717" y="281" text-anchor="middle" fill="var(--ink)" font-weight="600">ElectroMart</text><text x="717" y="296" text-anchor="middle" class="m" fill="var(--muted)">/m/electromart/mcp</text>
+      <rect x="805" y="264" width="155" height="40" rx="9" fill="var(--accent-soft)"/><text x="882" y="281" text-anchor="middle" fill="var(--ink)" font-weight="600">AudioNest</text><text x="882" y="296" text-anchor="middle" class="m" fill="var(--muted)">/m/audionest/mcp</text>
+    </g>
+    <text x="800" y="324" text-anchor="middle" font-size="10" fill="var(--muted)">checkout math · merchant_authorization (detached JWS over JCS)</text>
+    <text x="800" y="341" text-anchor="middle" font-size="10" fill="var(--muted)">verification gauntlet · OAuth 2.0 AS (RFC 8414) · analytics</text>
+    <text x="800" y="362" text-anchor="middle" font-size="10" fill="var(--green)">🔑 one signing key per tenant · /m/{id}/.well-known/ucp</text>
+
+    <!-- CP -->
+    <rect x="50" y="520" width="340" height="172" rx="14" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+    <text x="220" y="548" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">👛 Credentials Provider · :4102</text>
+    <text x="220" y="566" text-anchor="middle" font-size="10.5" fill="var(--muted)">AP2 Credentials Provider · trusted consent surface</text>
+    <text x="220" y="586" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">wallet · tokenization · SD-JWT+kb issuance</text>
+    <text x="220" y="603" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">spend policy (caps · budget · allowlist · autonomy · rail)</text>
+    <text x="220" y="620" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">approval inbox · passkey UV (WebAuthn/SPC) · consent audit</text>
+    <text x="220" y="641" text-anchor="middle" font-size="10" fill="var(--green)">🔑 service key + USER DEVICE KEY (ES256 JWKs)</text>
+    <text x="220" y="660" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">/mcp · /.well-known/ucp</text>
+    <text x="220" y="679" text-anchor="middle" font-size="9.5" fill="var(--muted)">policy enforced at mint_instrument + sign_mandate</text>
+
+    <!-- PSP -->
+    <rect x="620" y="520" width="360" height="172" rx="14" fill="var(--card)" stroke="var(--amber)" stroke-width="2"/>
+    <text x="800" y="548" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">🏦 Payment Provider · :4103</text>
+    <text x="800" y="566" text-anchor="middle" font-size="10.5" fill="var(--muted)">AP2 Merchant Payment Processor</text>
+    <text x="800" y="586" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">full mandate re-verification · multi-rail (card / RTP)</text>
+    <text x="800" y="603" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">KYA agent registry + reputation · velocity rules</text>
+    <text x="800" y="620" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">token-bound policy re-check · 3-DS challenge page</text>
+    <text x="800" y="641" text-anchor="middle" font-size="10" fill="var(--green)">🔑 PSP key (ES256 · published JWK)</text>
+    <text x="800" y="660" text-anchor="middle" font-size="10" class="m" fill="var(--muted)">/mcp · /.well-known/ucp · /challenge/{id}</text>
+    <text x="800" y="679" text-anchor="middle" font-size="9.5" fill="var(--muted)">3-DS continue_url opens in the user's browser</text>
+
+    <!-- EDGES -->
+    <!-- user -> agent -->
+    <line x1="120" y1="110" x2="135" y2="208" stroke="var(--muted)" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="38" y="150" font-size="10" fill="var(--muted)">demo UI: REST + SSE trace</text>
+    <text x="38" y="164" font-size="10" fill="var(--muted)">(not part of the protocols)</text>
+    <!-- user -> CP consent -->
+    <path d="M30 110 C 8 300, 8 440, 60 540" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="4 4" fill="none" marker-end="url(#arr)"/>
+    <text x="14" y="430" font-size="10" fill="var(--muted)" transform="rotate(-90 14 430)">consent surface: policy · approvals · passkey (REST)</text>
+
+    <!-- agent -> merchant : UCP -->
+    <path d="M280 248 L620 230" stroke="var(--accent)" stroke-width="2.4" fill="none" marker-end="url(#arrA)"/>
+    <text x="340" y="200" font-size="11" fill="var(--accent)" font-weight="700">UCP · dev.ucp.shopping.* — MCP binding</text>
+    <text x="340" y="215" font-size="10" fill="var(--accent)">JSON-RPC 2.0 tools/call · RFC 9421+9530 signed · Idempotency-Key</text>
+    <text x="340" y="229" font-size="10" fill="var(--muted)">search/lookup · cart · create/update/complete_checkout · orders · refund/dispute</text>
+    <text x="340" y="243" font-size="10" fill="var(--muted)">carries AP2: intent_mandate + checkout_mandate (SD-JWT+kb) · response @status signed</text>
+
+    <!-- agent <-> merchant : OAuth -->
+    <path d="M280 318 C 420 352, 500 352, 620 332" stroke="var(--muted)" stroke-width="1.7" fill="none" marker-end="url(#arr)"/>
+    <text x="356" y="372" font-size="10.5" fill="var(--ink)" font-weight="700">Identity Linking — OAuth 2.0 (REST)</text>
+    <text x="356" y="386" font-size="10" fill="var(--muted)">RFC 8414 discovery → /oauth/authorize → /oauth/token (PKCE)</text>
+    <text x="356" y="400" font-size="10" fill="var(--muted)">scope dev.ucp.shopping.order:read → list_orders via MCP with token</text>
+
+    <!-- merchant -> agent : webhook -->
+    <path d="M620 300 C 470 300, 380 288, 282 280" stroke="var(--teal)" stroke-width="1.8" stroke-dasharray="6 5" fill="none" marker-end="url(#arrT)"/>
+    <text x="368" y="272" font-size="10.5" fill="var(--teal)" font-weight="700">UCP order webhook — REST POST, RFC 9421-signed</text>
+    <text x="368" y="286" font-size="10" fill="var(--teal)">order.shipped / order.delivered / order.refunded → /webhooks/ucp</text>
+
+    <!-- agent -> CP -->
+    <path d="M140 366 L190 520" stroke="var(--violet)" stroke-width="2.2" fill="none" marker-end="url(#arrV)"/>
+    <text x="32" y="468" font-size="10.5" fill="var(--violet)" font-weight="700">AP2 wallet ops — MCP binding (signed)</text>
+    <text x="32" y="482" font-size="10" fill="var(--violet)">list_payment_methods · mint_instrument (policy!)</text>
+    <text x="32" y="496" font-size="10" fill="var(--violet)">sign_mandate (Intent/Cart/Payment/Checkout)</text>
+    <text x="32" y="510" font-size="10" fill="var(--violet)">passkey_* · request/check_approval · get_agent_policy</text>
+
+    <!-- merchant -> PSP -->
+    <path d="M800 380 L800 520" stroke="var(--amber)" stroke-width="2.2" fill="none" marker-end="url(#arrM)"/>
+    <text x="812" y="430" font-size="10.5" fill="var(--amber)" font-weight="700">AP2 payment processing — MCP (signed)</text>
+    <text x="812" y="444" font-size="10" fill="var(--amber)">lookup_agent (KYA gate) · authorize_payment</text>
+    <text x="812" y="458" font-size="10" fill="var(--amber)">(composite token + intent_mandate) · capture</text>
+    <text x="812" y="472" font-size="10" fill="var(--amber)">refund_payment · 3-DS requires_challenge</text>
+
+    <!-- PSP -> CP -->
+    <path d="M620 600 L392 600" stroke="var(--violet)" stroke-width="2" fill="none" marker-end="url(#arrV)"/>
+    <text x="404" y="588" font-size="10.5" fill="var(--violet)" font-weight="700">AP2 release_credentials — MCP (signed)</text>
+    <text x="404" y="602" font-size="10" fill="var(--violet)">single-use token → credentials + behavior</text>
+    <text x="404" y="616" font-size="10" fill="var(--violet)">+ token-bound policy snapshot + rail</text>
+
+    <!-- legend -->
+    <g font-size="10.5">
+      <rect x="20" y="712" width="960" height="66" rx="10" fill="none" stroke="var(--line)"/>
+      <line x1="40" y1="732" x2="78" y2="732" stroke="var(--accent)" stroke-width="2.4"/><text x="86" y="736" fill="var(--ink)">UCP capability call · MCP binding (JSON-RPC 2.0)</text>
+      <line x1="40" y1="756" x2="78" y2="756" stroke="var(--violet)" stroke-width="2.2"/><text x="86" y="760" fill="var(--ink)">AP2 wallet / credentials · MCP binding</text>
+      <line x1="430" y1="732" x2="468" y2="732" stroke="var(--amber)" stroke-width="2.2"/><text x="476" y="736" fill="var(--ink)">AP2 payment processing · MCP binding</text>
+      <line x1="430" y1="756" x2="468" y2="756" stroke="var(--teal)" stroke-width="1.8" stroke-dasharray="6 5"/><text x="476" y="760" fill="var(--ink)">UCP order webhook · signed REST POST</text>
+      <line x1="760" y1="732" x2="798" y2="732" stroke="var(--muted)" stroke-width="1.6"/><text x="806" y="736" fill="var(--ink)">plain REST (discovery · OAuth · UI)</text>
+      <text x="760" y="760" fill="var(--muted)">every solid edge: RFC 9421 + Content-Digest, keys from /.well-known/ucp</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <h3 style="margin-top:0">Same topology, text-based (Mermaid · auto-layout)</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 6px">Generated from a text source, so the layout engine guarantees
+    no overlapping lines and it stays easy to maintain. Edge colors match the legend above: <b style="color:var(--accent)">UCP capability calls</b>,
+    <b style="color:var(--violet)">AP2 wallet/credentials</b>, <b style="color:var(--amber)">AP2 payment processing</b>,
+    <b style="color:var(--teal)">signed order webhook</b>, gray = plain REST. Discovery (not drawn): every party additionally
+    serves <code>GET /.well-known/ucp</code> (REST, unsigned, cached) from which peers resolve MCP endpoints and JWKs.</p>
+    <pre class="mermaid">
+flowchart TB
+    U["👤 User (browser)<br/>Shoppy chat · GPay sheet · Touch ID<br/>Walletly consent surface · 3-DS page"]
+    A["🤖 Shopping Agent · :4100<br/>UCP Platform / AP2 Shopping Agent<br/>orchestrator · LLM loop · scenarios<br/>audit hash-chain · OTLP exporter<br/>🔑 platform key (ES256 JWK)"]
+    subgraph M["🏪 Merchant Portal · :4101 — 4 UCP Businesses + Merchant Agent · key per tenant"]
+        direction LR
+        M1["Wavelength<br/>/m/wavelength/mcp"]
+        M2["SoundHub<br/>/m/soundhub/mcp"]
+        M3["ElectroMart<br/>/m/electromart/mcp"]
+        M4["AudioNest<br/>/m/audionest/mcp"]
+    end
+    CP["👛 Credentials Provider · :4102<br/>AP2 Credentials Provider · consent surface<br/>wallet · tokenization · SD-JWT+kb issuance<br/>spend policy · approvals · passkey UV · audit<br/>🔑 service key + USER DEVICE KEY"]
+    PSP["🏦 Payment Provider · :4103<br/>AP2 Merchant Payment Processor<br/>mandate re-verification · multi-rail card/RTP<br/>KYA registry + reputation · velocity rules<br/>🔑 PSP key (ES256 JWK)"]
+
+    U -- "demo UI · REST + SSE trace" --> A
+    U -. "consent surface: policy · approvals · passkey (REST)" .-> CP
+    U -. "3-DS continue_url (browser step-up)" .-> PSP
+    A == "UCP dev.ucp.shopping.✱ — MCP binding<br/>JSON-RPC 2.0 tools/call · RFC 9421+9530 · Idempotency-Key<br/>search · cart · checkout · orders — carries AP2 mandates<br/>completion response signed (@status)" ==> M
+    A -- "Identity Linking — OAuth 2.0 (REST)<br/>RFC 8414 discovery · PKCE · scope order:read" --> M
+    M -. "UCP order webhook — signed REST POST<br/>order.shipped / delivered / refunded" .-> A
+    A -- "AP2 wallet ops — MCP signed<br/>mint_instrument (policy gate 1) · sign_mandate (gate 2)<br/>passkey_✱ · approvals · get_agent_policy" --> CP
+    M -- "AP2 payment processing — MCP signed<br/>lookup_agent (KYA) · authorize_payment<br/>capture · refund · 3-DS challenge" --> PSP
+    PSP -- "AP2 release_credentials — MCP signed<br/>single-use token → credentials<br/>+ policy snapshot (gate 3) + rail" --> CP
+
+    classDef agent fill:#eef2ff,stroke:#4f46e5,stroke-width:2px,color:#15171c
+    classDef merch fill:#f0fdfa,stroke:#0d9488,stroke-width:2px,color:#15171c
+    classDef wallet fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px,color:#15171c
+    classDef psp fill:#fffbeb,stroke:#b45309,stroke-width:2px,color:#15171c
+    classDef usr fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px,color:#15171c
+    class A agent
+    class M1,M2,M3,M4 merch
+    class CP wallet
+    class PSP psp
+    class U usr
+    linkStyle 0 stroke:#94a3b8,stroke-width:1.5px
+    linkStyle 1 stroke:#94a3b8,stroke-width:1.5px
+    linkStyle 2 stroke:#94a3b8,stroke-width:1.5px
+    linkStyle 3 stroke:#4f46e5,stroke-width:2.5px
+    linkStyle 4 stroke:#94a3b8,stroke-width:1.5px
+    linkStyle 5 stroke:#0d9488,stroke-width:2px
+    linkStyle 6 stroke:#7c3aed,stroke-width:2.5px
+    linkStyle 7 stroke:#b45309,stroke-width:2.5px
+    linkStyle 8 stroke:#7c3aed,stroke-width:2px
+    </pre>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <h3 style="margin-top:0">Reading the diagram — compliance per edge</h3>
+    <div class="kv">
+      <span class="k">UCP-compliant</span><span>Agent → Merchant capability calls (indigo) and the order webhook (teal): the shapes are the official UCP JSON Schemas, the transport is the UCP <b>MCP binding</b> (JSON-RPC 2.0 <code>tools/call</code> with <code>meta["ucp-agent"]</code> identity, dual <code>structuredContent</code>+<code>content[]</code> output, spec error codes), discovery is <code>/.well-known/ucp</code>.</span>
+      <span class="k">AP2-compliant</span><span>The violet and amber edges implement the AP2 roles: wallet operations and mandate signing at the Credentials Provider, processing at the PSP, credential release between them. AP2 doesn't prescribe a transport — we reuse the same signed MCP binding so one trust fabric covers everything.</span>
+      <span class="k">REST (no signing)</span><span>Profile discovery (per spec), OAuth 2.0 Identity Linking (RFC 8414 + PKCE), the user's consent surface (Walletly) and the 3-DS challenge page. These are browser/HTTP conventions, not UCP capability calls.</span>
+      <span class="k">not implemented</span><span>UCP's REST/OpenAPI, A2A (Agent Card) and Embedded bindings — the tool handlers are transport-agnostic, so these are routing additions (see Proposition → roadmap).</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Repository layout</h3>
+    <div class="codeblock"><button class="copy">copy</button><pre>
+packages/common/src/     <span class="c">shared protocol library</span>
+  jcs.ts                 <span class="c">RFC 8785 JSON canonicalization</span>
+  crypto.ts              <span class="c">ES256 keys, JWKs, compact + detached JWS</span>
+  sdjwt.ts               <span class="c">SD-JWT+kb issue / present / verify (checkout mandate)</span>
+  httpsig.ts             <span class="c">RFC 9421/9530 HTTP message signatures (request + response)</span>
+  jsonrpc.ts             <span class="c">UCP MCP binding: tools/call server + client, trust, idempotency, response signing</span>
+  ap2.ts                 <span class="c">merchant_authorization + SD-JWT+kb checkout-mandate helpers + UV challenge</span>
+  otel.ts                <span class="c">zero-dep OTLP/HTTP JSON exporter (one trace per session, ucp.* attributes)</span>
+apps/
+  shopping-agent/        <span class="c">orchestrator, NLU, LLM agent loop, scenario runner, Shoppy UI, SSE trace</span>
+  merchant-portal/       <span class="c">4 tenants: catalog/cart/checkout/order/refund/dispute tools, AP2 verify, OAuth, dashboard</span>
+  credentials-provider/  <span class="c">wallet, device-key SD-JWT issuance, tokenization, 3DS, dashboard</span>
+  payment-provider/      <span class="c">mandate verification, authorize/capture/refund, 3DS, dashboard</span>
+schemas/                 <span class="c">vendored OFFICIAL UCP JSON Schema tree (source of truth)</span>
+conformance-official/    <span class="c">vendored official pytest conformance suite (REST, reference)</span>
+scripts/
+  e2e.ts                 <span class="c">65-check end-to-end + negative security + policy/KYA/rails/audit/workflow tests</span>
+  validate-compliance.ts <span class="c">Ajv validation of live payloads vs official schemas (20)</span>
+  conformance.ts         <span class="c">category report mirroring the official suite (28)</span>
+  stop.sh                <span class="c">stop all four servers by port</span></pre></div>
+  </div>
+</section>
+
+<!-- ================== 4. JOURNEY ================== -->
+<section id="journey">
+  <h2><span class="num">4</span>A purchase, step by step</h2>
+  <p class="lede">Click each step to see what actually happens on the wire. Tags show the layer:
+  <span class="tag ucp">UCP</span> commerce, <span class="tag ap2">AP2</span> signed mandate, <span class="tag pki">PKI</span> verification.</p>
+  <div class="journey">
+    <div class="steps" id="steps"></div>
+    <div class="step-detail card" id="step-detail"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Three ways to drive the same protocol</h3>
+    <p style="font-size:14px">The flow above is identical no matter how it's triggered — only <i>who does the choosing</i> changes.
+    The Shoppy UI makes the mode explicit:</p>
+    <div class="grid4">
+      <div class="card" style="margin:0;border-top:4px solid var(--accent)"><b>🛍 Manual</b>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0">You type a request, then <b>you</b> pick the merchant, shipping
+        option and payment method — interactive product cards → checkout card → Google-Pay sheet → receipt.</p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--violet)"><b>🤖 LLM chat / autonomous</b>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0">With an API key, a <b>real LLM</b> drives the chat turn by turn
+        (<code>/api/chat</code>) — it searches, presents options and <b>asks before paying</b>. Or let it run the whole purchase from
+        one goal (<code>/api/agent</code>). Toggle 📜 Scripted ⟷ 🤖 LLM by the composer.</p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--green)"><b>⚙️ Scenarios</b>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0">One-click <b>automated demos</b> (15 of them) for success,
+        failure and capability flows — the fastest way to watch a specific protocol path in the trace. See §10.</p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--amber)"><b>📜 Scripts</b>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0"><code>npm run e2e</code> / <code>validate</code> /
+        <code>conformance</code> drive the same flows headlessly for testing. <code>npm run stop</code> shuts the servers down.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================== SEQUENCE DIAGRAMS ================== -->
+<section id="sequences">
+  <h2><span class="num">5</span>Sequence diagrams</h2>
+  <p class="lede">Five flows, drawn from the actual wire traffic (every message below is a real signed call you can watch
+  in the Protocol trace). <b>U</b> = user/browser, <b>A</b> = Shopping Agent (:4100), <b>M</b> = Merchant (:4101),
+  <b>CP</b> = Credentials Provider / Walletly (:4102), <b>PSP</b> = PayStream (:4103).</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">1 · Full purchase (happy path) — UCP checkout + AP2 mandate chain</h3>
+    <p style="font-size:13.5px;color:var(--muted)">The backbone flow. Note the three independent verification points:
+    the merchant verifies the checkout mandate + intent ceiling, the PSP re-verifies everything from scratch
+    (signature, scope, KYA, velocity, intent, token-bound policy), and the CP enforces the spend policy before any
+    credential exists at all.</p>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant A as Agent :4100
+    participant M as Merchant :4101
+    participant CP as Walletly :4102
+    participant PSP as PayStream :4103
+    U->>A: "ANC headphones under $300, 2-day"
+    A->>M: GET /.well-known/ucp (REST, all 4 tenants)
+    Note over A,M: capability negotiation (intersection)
+    A->>CP: sign_mandate(IntentMandate) — MCP, signed
+    A->>M: tools/call search_catalog — UCP MCP
+    U->>A: picks product + merchant
+    A->>M: create_checkout → checkout + ap2.merchant_authorization (detached JWS over JCS)
+    A->>A: verify merchant_authorization vs published JWK
+    A->>CP: sign_mandate(CartMandate)
+    U->>A: Pay (GPay sheet)
+    A->>CP: get_agent_policy → rail selection (card / RTP)
+    A->>CP: mint_instrument — POLICY GATE №1 (cap·budget·allowlist·autonomy)
+    CP-->>A: single-use token + policy snapshot bound in
+    A->>CP: sign_mandate(PaymentMandate) — POLICY GATE №2
+    U->>CP: Touch ID (WebAuthn/SPC assertion over SHA-256(JCS(checkout)))
+    A->>CP: sign_mandate(CheckoutMandate) → SD-JWT+kb (aud=merchant, nonce=checkout)
+    A->>M: complete_checkout(composite token, checkout_mandate, intent_mandate)
+    M->>PSP: lookup_agent — KYA gate (suspension / reputation)
+    M->>M: verify SD-JWT+kb · own JWS · terms · intent ceiling
+    M->>PSP: authorize_payment(composite token + intent_mandate)
+    PSP->>PSP: verify mandate sig+scope · KYA · velocity · intent
+    PSP->>CP: release_credentials(token) — single-use
+    CP-->>PSP: credentials + POLICY SNAPSHOT — GATE №3 (PSP re-check)
+    PSP-->>M: authorized (rail recorded)
+    M->>PSP: capture_payment
+    M-->>A: completed checkout + order {id, permalink} — response RFC 9421-signed (@status)
+    M--)A: order.shipped webhook — signed REST POST
+    </pre>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">2 · Identity Linking (dev.ucp.common.identity_linking) — OAuth 2.0</h3>
+    <p style="font-size:13.5px;color:var(--muted)"><b>Purpose:</b> until now the agent is an anonymous (if verified)
+    buyer — the merchant sees a KYA-verified agent, not <i>your customer</i>. Identity Linking lets the user connect
+    their <b>existing merchant account</b> to the agent via standard OAuth 2.0, so the agent can act on user-scoped
+    data: read order history ("where is my package?", reorders), returns, loyalty and personalization — with access
+    bounded by explicit scopes (<code>dev.ucp.shopping.order:read</code> in our build) instead of a password. The
+    token only unlocks <i>user-scoped</i> tools; all purchasing still requires the full AP2 mandate chain — a leaked
+    token cannot spend money. Scenario: <code>identity</code>.</p>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant A as Agent :4100
+    participant M as Merchant :4101
+    A->>M: GET /m/{id}/.well-known/oauth-authorization-server (RFC 8414)
+    M-->>A: {authorization_endpoint, token_endpoint, scopes, PKCE S256}
+    A->>M: GET /oauth/authorize?client_id&scope=order:read&code_challenge (PKCE)
+    Note over U,M: real deployment: merchant shows a consent screen to the user
+    M-->>A: 302 redirect_uri?code=…
+    A->>M: POST /oauth/token (code + code_verifier)
+    M-->>A: access_token (scoped: dev.ucp.shopping.order:read, expiring)
+    A->>M: tools/call list_orders(access_token) — UCP MCP, signed
+    M->>M: validate token + scope → ONLY this user's orders
+    M-->>A: order history (user-scoped)
+    A->>U: "You've ordered 3 times at Wavelength — want to reorder?"
+    </pre>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">3 · Approval workflow — human-in-the-loop autonomy</h3>
+    <p style="font-size:13.5px;color:var(--muted)">An autonomous purchase above the user's threshold isn't failed —
+    it's <b>held for consent</b>. The approval lives at the CP (the consent surface), waives only the autonomy gate,
+    only for this checkout, for 15 minutes. Caps, budget and allowlist still apply. Scenario: <code>approval</code>.</p>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as User (Walletly inbox)
+    participant A as Agent :4100
+    participant CP as Walletly :4102
+    Note over A: autonomous run (human_present=false), total $292 > $100 threshold
+    A->>CP: mint_instrument — policy: autonomy violation
+    CP-->>A: ✗ policy_autonomy_violation
+    A->>CP: request_approval(checkout, amount, merchant, summary)
+    CP-->>A: approval_id · status pending
+    Note over U,CP: approval appears in the Walletly inbox
+    U->>CP: Approve (or Deny) — consent recorded
+    A->>CP: check_approval(checkout_id) → approved
+    A->>CP: mint_instrument — autonomy gate WAIVED for this checkout
+    CP-->>A: token (caps/budget/allowlist still enforced)
+    A->>CP: sign_mandate(Payment + Checkout)
+    Note over A: purchase completes via the normal flow (diagram 1, steps 17+)
+    </pre>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">4 · 3-D Secure escalation — requires_escalation + continue_url</h3>
+    <p style="font-size:13.5px;color:var(--muted)">Strong Customer Authentication as UCP models it: the checkout
+    pauses with <code>requires_escalation</code> and a <code>continue_url</code> the platform opens for the user; the
+    retry carries the attestation. The single-use token tolerates exactly one re-release for the retry — a third
+    attempt is <code>token_replayed</code>. Scenario: <code>threeds</code>.</p>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant A as Agent :4100
+    participant M as Merchant :4101
+    participant PSP as PayStream :4103
+    A->>M: complete_checkout (Amex test card)
+    M->>PSP: authorize_payment
+    PSP-->>M: requires_challenge {challenge_id, continue_url}
+    M-->>A: checkout status=requires_escalation + continue_url
+    A->>U: open continue_url (bank step-up page at the PSP)
+    U->>PSP: completes the challenge (simulated bank auth)
+    PSP-->>A: attestation
+    A->>M: complete_checkout RETRY + ap2.challenge_attestation
+    M->>PSP: authorize_payment(attestation) → token re-release (≤2)
+    PSP-->>M: authorized · sca: attestation accepted
+    M-->>A: completed checkout + order
+    </pre>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">5 · Post-purchase agency — delivery monitoring → proactive refund</h3>
+    <p style="font-size:13.5px;color:var(--muted)">The agent's job continues after payment: it compares the carrier's
+    expectation against the promise made at checkout, and remediates a broken promise on the user's behalf.
+    Scenario: <code>late_delivery</code>.</p>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant A as Agent :4100
+    participant M as Merchant :4101
+    participant PSP as PayStream :4103
+    M--)A: order.shipped webhook — carrier slips ETA +3 days
+    A->>M: tools/call get_order — UCP MCP
+    A->>A: expectations[0].fulfillable_on > promised ETA → LATE
+    A->>M: refund_order(10% goodwill)
+    M->>PSP: refund_payment(partial)
+    PSP-->>M: refund_id · partially_refunded
+    M-->>A: order + refund adjustment
+    M--)A: order.refunded webhook — signed
+    Note over A: evidence bundle (mandates + hash-chained trace) exportable any time
+    </pre>
+  </div>
+</section>
+
+
+<!-- ================== 5. WELL-KNOWN ================== -->
+<section id="wellknown">
+  <h2><span class="num">6</span>Discovery &amp; <code>/.well-known/ucp</code></h2>
+  <p class="lede">Before two parties can transact they must find each other and agree on what they both speak.
+  UCP does this with a single, cacheable JSON document: the <b>profile</b>.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">One document, two jobs</h3>
+    <p>A profile simultaneously declares <b>capabilities</b> (for negotiation) and publishes <b>signing keys</b>
+    (for identity). This enables <i>permissionless onboarding</i>: any platform with a fetchable profile can interact
+    with any business — no API-key exchange required.</p>
+    <div class="kv">
+      <span class="k">ucp.version</span><span>Protocol version (<code>2026-04-08</code>) — date-based, negotiated per session.</span>
+      <span class="k">ucp.services</span><span>Where to call: transport (<code>mcp</code> here) + the <b>endpoint URL</b>. Platforms resolve endpoints from this — never hardcoded.</span>
+      <span class="k">ucp.capabilities</span><span>What it can do — reverse-domain names (<code>dev.ucp.shopping.checkout</code>), each with required <code>spec</code> + <code>schema</code> URLs, and <code>extends</code> for extensions.</span>
+      <span class="k">ucp.payment_handlers</span><span>How to pay — handler registry (<code>com.google.pay</code>) with instance <code>id</code> and config.</span>
+      <span class="k">signing_keys</span><span>Public ES256 keys as JWKs — the PKI roots for everything in §7–8.</span>
+    </div>
+  </div>
+
+  <div class="tabs" data-tabs="wk"><button class="on">Business profile (merchant)</button><button>Platform profile (agent)</button><button>Capability negotiation</button></div>
+  <div class="tabpanes" data-panes="wk">
+  <div class="on"><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">GET http://localhost:4101/m/wavelength/.well-known/ucp</span>
+<span class="c">Cache-Control: public, max-age=300   ← spec: MUST be public, ≥60s</span>
+{
+  <span class="k">"ucp"</span>: {
+    <span class="k">"version"</span>: <span class="s">"2026-04-08"</span>,
+    <span class="k">"services"</span>: { <span class="k">"dev.ucp.shopping"</span>: [{
+      <span class="k">"transport"</span>: <span class="s">"mcp"</span>,
+      <span class="k">"endpoint"</span>: <span class="s">"http://localhost:4101/m/wavelength/mcp"</span>,
+      <span class="k">"schema"</span>: <span class="s">"https://ucp.dev/2026-04-08/services/shopping/mcp.openrpc.json"</span>, ...}]},
+    <span class="k">"capabilities"</span>: {
+      <span class="k">"dev.ucp.shopping.checkout"</span>:       [{ <span class="k">"version"</span>: <span class="s">"2026-04-08"</span>, <span class="k">"spec"</span>: <span class="s">"…"</span>, <span class="k">"schema"</span>: <span class="s">"…/checkout.json"</span> }],
+      <span class="k">"dev.ucp.shopping.cart"</span>:           [{ ... }],
+      <span class="k">"dev.ucp.shopping.catalog.search"</span>: [{ ... }],
+      <span class="k">"dev.ucp.shopping.catalog.lookup"</span>: [{ ... }],
+      <span class="k">"dev.ucp.shopping.order"</span>:          [{ ... }],
+      <span class="k">"dev.ucp.shopping.fulfillment"</span>:    [{ <span class="k">"extends"</span>: <span class="s">"dev.ucp.shopping.checkout"</span>, ... }],
+      <span class="k">"dev.ucp.shopping.discount"</span>:       [{ <span class="k">"extends"</span>: <span class="s">"dev.ucp.shopping.checkout"</span>, ... }],
+      <span class="k">"dev.ucp.shopping.ap2_mandate"</span>:    [{ <span class="k">"extends"</span>: <span class="s">"dev.ucp.shopping.checkout"</span>, ... }],
+      <span class="k">"dev.ucp.common.identity_linking"</span>: [{ <span class="k">"config"</span>: { <span class="k">"scopes"</span>: { <span class="k">"dev.ucp.shopping.order:read"</span>: {} } } }]
+    },
+    <span class="k">"payment_handlers"</span>: { <span class="k">"com.google.pay"</span>: [{ <span class="k">"id"</span>: <span class="s">"gpay_wavelength"</span>, ... }] }
+  },
+  <span class="k">"signing_keys"</span>: [{ <span class="k">"kid"</span>: <span class="s">"wavelength-2026"</span>, <span class="k">"kty"</span>: <span class="s">"EC"</span>, <span class="k">"crv"</span>: <span class="s">"P-256"</span>, <span class="k">"x"</span>: <span class="s">"…"</span>, <span class="k">"y"</span>: <span class="s">"…"</span> }]
+}</pre></div></div>
+  <div><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">GET http://localhost:4100/.well-known/ucp — advertised to merchants via the UCP-Agent header</span>
+{
+  <span class="k">"ucp"</span>: {
+    <span class="k">"version"</span>: <span class="s">"2026-04-08"</span>,
+    <span class="k">"capabilities"</span>: {
+      ...,
+      <span class="k">"dev.ucp.shopping.order"</span>: [{
+        <span class="k">"config"</span>: { <span class="k">"webhook_url"</span>: <span class="s">"http://localhost:4100/webhooks/ucp"</span> }  <span class="c">← where merchants push order events</span>
+      }]
+    },
+    <span class="k">"payment_handlers"</span>: { <span class="k">"com.google.pay"</span>: [{ <span class="k">"available_instruments"</span>: [{<span class="k">"type"</span>:<span class="s">"card"</span>}], ... }] }
+  },
+  <span class="k">"signing_keys"</span>: [{ <span class="k">"kid"</span>: <span class="s">"shoppy-platform-2026"</span>, ... }]
+}</pre></div></div>
+  <div><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">// The spec's intersection algorithm (packages → orchestrator.ts):</span>
+<span class="c">// 1. keep capabilities present in BOTH profiles…</span>
+<span class="c">// 2. …at a mutual version (highest common)</span>
+<span class="c">// 3. prune extensions whose parent didn't survive ("orphan pruning")</span>
+<span class="c">// 4. repeat 3 until stable (transitive chains)</span>
+
+intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_mandate]
+
+<span class="c">// ap2_mandate in the intersection ⇒ the session is SECURITY-LOCKED:</span>
+<span class="c">// every checkout response must be merchant-signed, and complete_checkout</span>
+<span class="c">// without a user mandate is rejected with code "mandate_required".</span></pre></div></div>
+  </div>
+
+  <div class="callout"><b>Who exposes a well-known endpoint?</b> Every <b>business</b> MUST (here: one per merchant tenant).
+  The <b>platform</b> publishes one so businesses can verify it from the <code>UCP-Agent</code> header. The Credentials Provider
+  and PSP are AP2 roles, not UCP businesses — they publish the same envelope so peers can discover their <b>keys</b>
+  (the user device key lives in the CP profile — that's how merchants and the PSP verify mandates) and their endpoints.</div>
+</section>
+
+<!-- ================== 6. JSON-RPC ================== -->
+<section id="jsonrpc">
+  <h2><span class="num">7</span>Communication: JSON-RPC 2.0 &amp; the MCP binding</h2>
+  <p class="lede">All service-to-service communication uses JSON-RPC 2.0 over HTTP in the exact shape UCP specifies for its
+  MCP transport: a single <code>tools/call</code> method wrapping named operations.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">The envelope</h3>
+    <p>JSON-RPC 2.0 is a tiny convention: a request has <code>method</code>, <code>params</code>, <code>id</code>; a response has
+    a matching <code>id</code> and either <code>result</code> or <code>error</code>. UCP profiles it further:</p>
+    <ul style="font-size:14px">
+      <li><b>Operation name</b> goes in <code>params.name</code> (e.g. <code>create_checkout</code>), <b>payload</b> in <code>params.arguments</code>.</li>
+      <li><code>arguments.meta["ucp-agent"].profile</code> is <b>required</b> on every call — it carries the caller's identity for negotiation; <code>meta["idempotency-key"]</code> is required for <code>complete_checkout</code> / <code>cancel_checkout</code>.</li>
+      <li>Responses use the <b>dual-output pattern</b>: structured payload in <code>result.structuredContent</code> plus a serialized copy in <code>result.content[]</code> for older MCP clients.</li>
+      <li>The MCP handshake methods <code>initialize</code> and <code>tools/list</code> are implemented; tool definitions declare <code>outputSchema</code> referencing official UCP JSON Schemas.</li>
+    </ul>
+  </div>
+
+  <div class="tabs" data-tabs="rpc"><button class="on">Request</button><button>Response</button><button>Business error</button><button>Protocol error</button></div>
+  <div class="tabpanes" data-panes="rpc">
+  <div class="on"><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">POST /m/wavelength/mcp        (plus the signature headers from §7)</span>
+{
+  <span class="k">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="k">"id"</span>: <span class="n">7</span>, <span class="k">"method"</span>: <span class="s">"tools/call"</span>,
+  <span class="k">"params"</span>: {
+    <span class="k">"name"</span>: <span class="s">"create_checkout"</span>,
+    <span class="k">"arguments"</span>: {
+      <span class="k">"meta"</span>: {
+        <span class="k">"ucp-agent"</span>: { <span class="k">"profile"</span>: <span class="s">"http://localhost:4100/.well-known/ucp"</span> },
+        <span class="k">"idempotency-key"</span>: <span class="s">"550e8400-e29b-41d4-a716-446655440000"</span>
+      },
+      <span class="k">"checkout"</span>: {
+        <span class="k">"line_items"</span>: [{ <span class="k">"item"</span>: {<span class="k">"id"</span>: <span class="s">"cadence-anc-pro"</span>}, <span class="k">"quantity"</span>: <span class="n">1</span> }],
+        <span class="k">"buyer"</span>: { <span class="k">"email"</span>: <span class="s">"alex.morgan@example.com"</span>, ... },
+        <span class="k">"fulfillment"</span>: { <span class="k">"methods"</span>: [{ <span class="k">"type"</span>: <span class="s">"shipping"</span>, <span class="k">"destinations"</span>: [ ... ] }] }
+      }
+    }
+  }
+}</pre></div></div>
+  <div><div class="codeblock"><button class="copy">copy</button><pre>
+{
+  <span class="k">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="k">"id"</span>: <span class="n">7</span>,
+  <span class="k">"result"</span>: {
+    <span class="k">"structuredContent"</span>: {
+      <span class="k">"checkout"</span>: {
+        <span class="k">"ucp"</span>: { <span class="k">"version"</span>: <span class="s">"2026-04-08"</span>,
+                 <span class="k">"capabilities"</span>: { <span class="k">"dev.ucp.shopping.checkout"</span>: [{<span class="k">"version"</span>:<span class="s">"2026-04-08"</span>}], ... },
+                 <span class="k">"payment_handlers"</span>: { <span class="k">"com.google.pay"</span>: [ ... ] } },
+        <span class="k">"id"</span>: <span class="s">"checkout_f1aa0e07…"</span>, <span class="k">"status"</span>: <span class="s">"ready_for_complete"</span>, <span class="k">"currency"</span>: <span class="s">"USD"</span>,
+        <span class="k">"totals"</span>: [
+          { <span class="k">"type"</span>: <span class="s">"subtotal"</span>,    <span class="k">"amount"</span>: <span class="n">30800</span> },              <span class="c">← minor units (cents)!</span>
+          { <span class="k">"type"</span>: <span class="s">"discount"</span>,    <span class="k">"amount"</span>: <span class="n">-500</span>, <span class="k">"display_text"</span>: <span class="s">"Agent discount"</span> },
+          { <span class="k">"type"</span>: <span class="s">"fulfillment"</span>, <span class="k">"amount"</span>: <span class="n">0</span>,    <span class="k">"display_text"</span>: <span class="s">"Shipping · 2-day"</span> },
+          { <span class="k">"type"</span>: <span class="s">"tax"</span>,         <span class="k">"amount"</span>: <span class="n">2613</span> },
+          { <span class="k">"type"</span>: <span class="s">"total"</span>,       <span class="k">"amount"</span>: <span class="n">32913</span> } ],
+        <span class="k">"ap2"</span>: { <span class="k">"merchant_authorization"</span>: <span class="s">"eyJhbGciOiJFUzI1NiIsImtpZCI6…​..MEUCIQ…"</span> }  <span class="c">← §8</span>
+      }
+    },
+    <span class="k">"content"</span>: [{ <span class="k">"type"</span>: <span class="s">"text"</span>, <span class="k">"text"</span>: <span class="s">"{\"checkout\":{…}}"</span> }]   <span class="c">← dual output</span>
+  }
+}</pre></div></div>
+  <div><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">// "Business outcome" — the request was processed, the answer is a domain error.</span>
+<span class="c">// Returned as result (HTTP 200) with a UCP error envelope + messages:</span>
+{
+  <span class="k">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="k">"id"</span>: <span class="n">3</span>,
+  <span class="k">"result"</span>: { <span class="k">"structuredContent"</span>: {
+    <span class="k">"ucp"</span>: { <span class="k">"version"</span>: <span class="s">"2026-04-08"</span>, <span class="k">"status"</span>: <span class="s">"error"</span> },
+    <span class="k">"messages"</span>: [{ <span class="k">"type"</span>: <span class="s">"error"</span>, <span class="k">"code"</span>: <span class="s">"item_unavailable"</span>,
+                   <span class="k">"content"</span>: <span class="s">"No item xyz in catalog"</span>, <span class="k">"severity"</span>: <span class="s">"unrecoverable"</span>,
+                   <span class="k">"path"</span>: <span class="s">"$.line_items[0]"</span> }],
+    <span class="k">"continue_url"</span>: <span class="s">"https://shop.wavelength.example/"</span>   <span class="c">← graceful web fallback</span>
+  }, <span class="k">"content"</span>: [ ... ] }
+}</pre></div></div>
+  <div><div class="codeblock"><button class="copy">copy</button><pre>
+<span class="c">// "Protocol error" — the request could not be processed at all.</span>
+<span class="c">// JSON-RPC error + matching HTTP status as the primary signal:</span>
+<span class="c">HTTP/1.1 401 Unauthorized</span>
+{
+  <span class="k">"jsonrpc"</span>: <span class="s">"2.0"</span>, <span class="k">"id"</span>: <span class="n">5</span>,
+  <span class="k">"error"</span>: {
+    <span class="k">"code"</span>: <span class="n">-32000</span>,                       <span class="c">← -32001 for discovery failures</span>
+    <span class="k">"message"</span>: <span class="s">"Signature verification failed"</span>,
+    <span class="k">"data"</span>: { <span class="k">"code"</span>: <span class="s">"signature_missing"</span>, <span class="k">"content"</span>: <span class="s">"PKI verification failed"</span> }
+  }
+}
+<span class="c">// Idempotency-key reused with a DIFFERENT payload → HTTP 409 (idempotency_conflict)</span></pre></div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">The tool registry — every tool, documented</h3>
+    <p style="font-size:13px;color:var(--muted)">All 33 tools exposed over the MCP binding (<code>tools/call</code>, RFC 9421-signed).
+    <b>⚿</b> = requires an <code>Idempotency-Key</code> (identical replay → cached 200; same key + different body → 409).
+    Business outcomes (declines, invalid promos) come back as <code>messages[]</code>; protocol violations as JSON-RPC errors with UCP codes.</p>
+
+    <h4 style="margin:14px 0 6px">🏪 Merchant (per tenant) — called by the Shopping Agent · capability <code>dev.ucp.shopping.*</code></h4>
+    <table>
+      <tr><th style="width:170px">Tool</th><th>Purpose &amp; behavior</th><th style="width:34%">Inputs → returns · notes</th></tr>
+      <tr><td><code>search_catalog</code></td><td>Catalog discovery (<code>catalog.search</code>): full-text query + filters (<code>price_max</code>, <code>ship_days</code>, <code>in_stock</code>). The agent fans this out to every eligible merchant after capability negotiation. Out-of-stock items (portal toggle) are excluded.</td><td><code>{query, filters}</code> → <code>search_response{items[]}</code> per the official schema.</td></tr>
+      <tr><td><code>lookup_catalog</code></td><td>Batch lookup (<code>catalog.lookup</code>): resolve many product ids in one call — used for re-pricing carts and accessory resolution.</td><td><code>{ids[]}</code> → <code>lookup_response{items[]}</code>; unknown ids are omitted.</td></tr>
+      <tr><td><code>get_product</code></td><td>Single-product detail: price, shipping promise, stock, specs, <code>accessory_for</code> relations (drives the upsell).</td><td><code>{id}</code> → product with <code>metadata</code>. Scenario: <code>lookup</code>.</td></tr>
+      <tr><td><code>create_cart</code> · <code>get_cart</code><br/><code>update_cart</code> · <code>cancel_cart</code></td><td>Pre-intent basket (<code>dev.ucp.shopping.cart</code>): build/adjust a basket before any checkout exists; totals recomputed on every update. Carts are unsigned (no money powers) — checkout is where signing starts.</td><td><code>{line_items[], buyer?}</code> → cart with totals + links. Scenario: <code>cart</code>.</td></tr>
+      <tr><td><code>create_checkout</code></td><td>Opens a priced, signed checkout session: computes totals (subtotal / fulfillment / discounts &lt; 0 / tax / total — exactly one subtotal + one total), attaches fulfillment options and the <code>ucp</code> envelope advertising both payment handlers (<code>com.google.pay</code>, <code>com.paystream.rtp</code>), and seals <code>ap2.merchant_authorization</code> — a detached JWS over JCS(checkout − ap2).</td><td><code>{line_items[], buyer, fulfillment…}</code> → checkout (<code>incomplete</code> or <code>ready_for_complete</code>). Every response is re-signed.</td></tr>
+      <tr><td><code>get_checkout</code></td><td>Read the live session — always returns the current re-signed state.</td><td><code>{id}</code> → checkout.</td></tr>
+      <tr><td><code>update_checkout</code></td><td>Mutates the session: quantities, shipping address, fulfillment option (express re-prices), discount codes. Totals recomputed and the checkout <b>re-signed</b>; advisory <code>messages[]</code> (e.g. invalid promo) are merged <i>before</i> signing so the signature always covers what the buyer sees.</td><td><code>{id, line_items?/buyer?/fulfillment?/discounts?}</code> → re-signed checkout. Scenarios: <code>express</code>, <code>promo</code>.</td></tr>
+      <tr><td><code>complete_checkout</code> ⚿</td><td>The verification gauntlet, in order: ① KYA — <code>lookup_agent</code> at the PSP (suspended / low-reputation ⇒ <code>agent_untrusted</code>); ② verify the SD-JWT+kb checkout mandate (CP issuer signature, key-binding to the user device key, <code>aud</code>=this tenant, <code>nonce</code>=checkout id, expiry); ③ verify its own <code>merchant_authorization</code> inside the embedded checkout (nested binding — tamper detection); ④ terms match the live session (id + total); ⑤ verify the <b>intent mandate</b> (signature + basket ≤ signed ceiling) and forward it; ⑥ validate the instrument's <code>handler_id</code> was advertised; ⑦ PSP authorize + capture; ⑧ create the Order + dispute-ready evidence. 3-DS ⇒ <code>requires_escalation</code> + <code>continue_url</code>; retry accepts <code>ap2.challenge_attestation</code>. The completion response itself is RFC 9421-signed (<code>@status</code>).</td><td><code>{id, checkout:{payment.instruments[], signals, ap2:{checkout_mandate, intent_mandate?, challenge_attestation?}}}</code> → completed checkout + <code>order{id, permalink_url}</code>. Errors: <code>mandate_required/expired/scope_mismatch</code>, <code>agent_untrusted</code>, <code>payment_declined</code>…</td></tr>
+      <tr><td><code>cancel_checkout</code></td><td>Abandons a non-completed session (status ⇒ <code>canceled</code>).</td><td><code>{id}</code> → canceled checkout.</td></tr>
+      <tr><td><code>get_order</code></td><td>Reads the Order object: chained line items, fulfillment <i>expectations</i> (promised window) and carrier <i>events</i> — what the post-purchase monitor compares to detect late deliveries.</td><td><code>{id}</code> → <code>{order}</code>. Scenario: <code>late_delivery</code>.</td></tr>
+      <tr><td><code>list_orders</code></td><td><b>Identity Linking</b>: returns ONLY the linked user's orders, gated by an OAuth 2.0 access token with scope <code>dev.ucp.shopping.order:read</code> (RFC 8414 discovery + PKCE). A leaked token reads history; it can never spend.</td><td><code>{access_token}</code> → user-scoped orders. Scenario: <code>identity</code>.</td></tr>
+      <tr><td><code>refund_order</code> ⚿</td><td>Full or partial refund: calls the PSP's <code>refund_payment</code>, records a post-order adjustment, pushes a signed <code>order.refunded</code> webhook.</td><td><code>{id, amount?, reason}</code> → order with refund adjustment. Scenarios: <code>refund</code>, <code>late_delivery</code>.</td></tr>
+      <tr><td><code>file_dispute</code> ⚿</td><td>Opens a dispute and attaches the AP2 evidence package — user-signed mandate chain + the merchant's verification log — the adjudicator's non-repudiable record.</td><td><code>{id, reason}</code> → dispute + <code>evidence</code>. Scenario: <code>dispute</code>.</td></tr>
+    </table>
+
+    <h4 style="margin:18px 0 6px">👛 Credentials Provider — called by the Agent (and PSP for release) · AP2 wallet role</h4>
+    <table>
+      <tr><th style="width:170px">Tool</th><th>Purpose &amp; behavior</th><th style="width:34%">Inputs → returns · notes</th></tr>
+      <tr><td><code>list_payment_methods</code></td><td>The user's agentic-ready instruments — display data only (network, last4, rail); PANs never leave the wallet. Includes the deterministic demo behaviors (3-DS test card, declining card) and the RTP checking account.</td><td><code>{user}</code> → <code>{payment_methods[]}</code>.</td></tr>
+      <tr><td><code>mint_instrument</code></td><td><b>Policy gate №1.</b> Evaluates the spend policy (per-tx cap, budget, merchant allowlist, validity window, autonomy — with the approval-inbox waiver) and only then mints a <b>single-use</b> token bound to the checkout context. The policy snapshot and rail travel <i>inside</i> the token, like a network-enforced scope.</td><td><code>{method_id?, context:{checkout_id, merchant_id, amount, human_present}}</code> → <code>{instrument(network_token|rtp_token), handler, policy}</code>. Errors: <code>policy_*</code> (403).</td></tr>
+      <tr><td><code>sign_mandate</code></td><td>Signs the AP2 mandates after trusted-surface approval. Intent/Cart/Payment: compact JWS by the <b>user device key</b> (Payment = <b>policy gate №2</b>). Checkout: a real <b>SD-JWT+kb</b> — issued by the CP service key, key-bound to the device key (<code>typ kb+jwt</code>, <code>aud</code>=merchant profile, <code>nonce</code>=checkout id), selective disclosure (reveal <code>sub</code>, withhold <code>buyer_email</code>). If a passkey is enrolled, signing is gated on a verified WebAuthn/SPC assertion whose challenge = SHA-256(JCS(checkout − ap2)) with UV=1 — real Touch ID over the exact terms.</td><td><code>{kind, payload, webauthn?}</code> → <code>{jws, kid, format, approved_via, passkey_evidence?}</code>. Errors: <code>policy_*</code>, <code>user_verification_required/failed</code>.</td></tr>
+      <tr><td><code>release_credentials</code></td><td>PSP-only (AP2 steps 26–27): exchanges the single-use token for payment credentials. Enforces single-use (≤2 releases — exactly one 3-DS retry), honors user revocation (<code>token_revoked</code>), and returns the token-bound <b>policy snapshot + rail</b> for the PSP's independent re-check. Budget is accounted here — on first release, when credentials actually move.</td><td><code>{token}</code> → <code>{credentials, behavior, context, policy, rail}</code>. Errors: <code>token_not_found/replayed/revoked</code>.</td></tr>
+      <tr><td><code>resolve_challenge</code></td><td>3-D Secure: issues the attestation after the user completes the bank step-up (simulated page at the PSP's <code>continue_url</code>).</td><td><code>{challenge_id}</code> → <code>{attestation}</code>. Scenario: <code>threeds</code>.</td></tr>
+      <tr><td><code>get_agent_policy</code></td><td>Read-only policy view — the agent uses it for rail preview and the autonomy pre-check before attempting an autonomous purchase.</td><td><code>{}</code> → <code>{policy}</code> (caps, budget+spent, allowlist, autonomy, rail, window).</td></tr>
+      <tr><td><code>request_approval</code></td><td><b>Human-in-the-loop:</b> files an approval request for an autonomy-blocked purchase; it appears in the Walletly inbox. Idempotent per checkout. An approval waives ONLY the autonomy gate, only for this checkout, for 15 minutes.</td><td><code>{checkout_id, amount, merchant…, summary}</code> → <code>{approval_id, status}</code>. Scenario: <code>approval</code>.</td></tr>
+      <tr><td><code>check_approval</code></td><td>Polls the user's decision (pending / approved / denied) by approval or checkout id.</td><td><code>{approval_id|checkout_id}</code> → <code>{status, decided_at?}</code>.</td></tr>
+      <tr><td><code>passkey_status</code></td><td>Whether passkey user-verification is enabled (flag <code>PASSKEYS</code>) and enrolled; the agent decides from this whether the pay sheet runs the Touch ID ceremony or the simulated fallback.</td><td><code>{}</code> → <code>{enabled, enrolled, rp_id, credential_id}</code>.</td></tr>
+      <tr><td><code>passkey_register_options</code><br/><code>passkey_register</code></td><td>WebAuthn enrollment: creation options (platform authenticator, UV required, ES256) then attestation verification — the COSE public key is stored as the user's passkey.</td><td><code>{}</code> → creation options · <code>{response}</code> → <code>{enrolled, credential_id}</code>.</td></tr>
+      <tr><td><code>passkey_auth_options</code></td><td>Builds the assertion request for a specific checkout: challenge = the checkout's UV hash, <code>allowCredentials</code> = the enrolled passkey, plus SPC display data (instrument, amount) for Chrome's native payment sheet.</td><td><code>{uv_challenge, checkout_id}</code> → <code>{options, payment}</code>.</td></tr>
+    </table>
+
+    <h4 style="margin:18px 0 6px">🏦 Payment Provider — called by Merchants (and the Agent for KYA) · AP2 processor role</h4>
+    <table>
+      <tr><th style="width:170px">Tool</th><th>Purpose &amp; behavior</th><th style="width:34%">Inputs → returns · notes</th></tr>
+      <tr><td><code>authorize_payment</code> ⚿</td><td>Independent re-verification of everything, trusting no upstream party: ① PaymentMandate signature against the CP's published JWKs; ② <b>KYA</b> — the mandate's <code>agent</code> must not be suspended / reputation &lt; 40; ③ <b>velocity</b> — rolling per-agent rate limit (429 <code>velocity_exceeded</code>); ④ scope — expiry, amount, payee, checkout binding, cart linkage; ⑤ optional <b>intent mandate</b> re-validation (signature + budget ceiling); ⑥ <code>release_credentials</code> at the CP; ⑦ <b>policy gate №3</b> — re-check of the token-bound spend snapshot; ⑧ issuer simulation → authorized / <code>requires_challenge</code> (3-DS, with <code>continue_url</code>) / declined. Records the settlement <b>rail</b> and reputation events.</td><td><code>{payment:{merchant…, amount, credential(composite token), intent_mandate?, challenge_attestation?}, signals}</code> → <code>{transaction_id, status, rail, verification{…}}</code>.</td></tr>
+      <tr><td><code>capture_payment</code> ⚿</td><td>Settles an authorized transaction (auth → capture); clean settlement nudges the agent's reputation up (+1).</td><td><code>{transaction_id}</code> → <code>{status: captured, rail}</code>. Error: <code>invalid_state</code> (409).</td></tr>
+      <tr><td><code>refund_payment</code> ⚿</td><td>Issuer credit, full or partial, with per-refund records; transitions to <code>refunded</code> / <code>partially_refunded</code>. Also reachable from the PSP dashboard drill-in.</td><td><code>{transaction_id, amount?, reason}</code> → <code>{refund_id, total_refunded, status}</code>.</td></tr>
+      <tr><td><code>get_payment</code></td><td>Transaction lookup — status, rail, agent, verification log, refunds.</td><td><code>{transaction_id}</code> → transaction.</td></tr>
+      <tr><td><code>lookup_agent</code></td><td><b>Know Your Agent:</b> the registry read used by merchants before accepting an agent's money movement — registration, KYA level, status (suspendable from the dashboard), behavior-driven reputation score.</td><td><code>{profile_url}</code> → <code>{registered, kya_level, status, reputation}</code>. Scenario: <code>kya_blocked</code>.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ================== 7. UCP DEEP ================== -->
+<section id="ucp">
+  <h2><span class="num">8</span>UCP in depth</h2>
+  <p class="lede">The Universal Commerce Protocol decomposes commerce into <b>capabilities</b> with strict JSON Schemas,
+  composable <b>extensions</b>, and pluggable <b>payment handlers</b>.</p>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">Checkout lifecycle</h3>
+      <svg class="diagram" viewBox="0 0 420 240">
+        <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+        <g font-size="11.5" font-weight="600">
+        <rect x="20" y="20" width="130" height="34" rx="9" fill="var(--accent-soft)"/><text x="85" y="41" text-anchor="middle" fill="var(--ink)">incomplete</text>
+        <rect x="230" y="20" width="170" height="34" rx="9" fill="var(--accent-soft)"/><text x="315" y="41" text-anchor="middle" fill="var(--ink)">ready_for_complete</text>
+        <rect x="230" y="100" width="170" height="34" rx="9" fill="var(--accent-soft)"/><text x="315" y="121" text-anchor="middle" fill="var(--ink)">complete_in_progress</text>
+        <rect x="230" y="180" width="170" height="34" rx="9" fill="#d1fae5"/><text x="315" y="201" text-anchor="middle" fill="#065f46">completed → order</text>
+        <rect x="20" y="180" width="130" height="34" rx="9" fill="#fee2e2"/><text x="85" y="201" text-anchor="middle" fill="#991b1b">canceled</text>
+        </g>
+        <g stroke="var(--muted)" stroke-width="1.5" fill="none">
+        <path d="M150 37 L230 37" marker-end="url(#a2)"/>
+        <path d="M315 54 L315 100" marker-end="url(#a2)"/>
+        <path d="M315 134 L315 180" marker-end="url(#a2)"/>
+        <path d="M85 54 L85 180" marker-end="url(#a2)"/>
+        </g>
+        <text x="158" y="30" font-size="9.5" fill="var(--muted)">buyer + destination set</text>
+        <text x="322" y="80" font-size="9.5" fill="var(--muted)">complete_checkout (+mandates)</text>
+        <text x="322" y="160" font-size="9.5" fill="var(--muted)">PSP captured</text>
+        <text x="92" y="120" font-size="9.5" fill="var(--muted)">cancel_checkout</text>
+      </svg>
+      <p style="font-size:13px;color:var(--muted)">The merchant recomputes totals and <b>re-signs</b> the checkout on every
+      transition. Totals follow the schema rules: exactly one <code>subtotal</code> and one <code>total</code>, discounts negative,
+      shipping as type <code>fulfillment</code>.</p>
+    </div>
+    <div class="card"><h3 style="margin-top:0">Payment handler model</h3>
+      <p style="font-size:13.5px">UCP separates <i>what</i> is accepted (instruments) from <i>how</i> it's processed (handlers).
+      The credential flows <b>one way</b> — platform → business → PSP — and the agent only ever holds opaque tokens:</p>
+      <div class="kv">
+        <span class="k">1 · Negotiation</span><span>Merchant advertises <code>com.google.pay</code> (instance <code>gpay_wavelength</code>) in profile + checkout responses.</span>
+        <span class="k">2 · Acquisition</span><span>Agent executes the handler against the wallet: <code>mint_instrument</code> → single-use network token + cryptogram. The PAN never appears.</span>
+        <span class="k">3 · Completion</span><span>Agent submits the instrument with <code>handler_id</code>; merchant validates it against the advertised set, forwards to the PSP.</span>
+      </div>
+      <p style="font-size:13px;color:var(--muted)">For agents, the credential is an <b>AP2 composite token</b>:
+      <code>{ network_token, payment_mandate }</code> — token and proof travel together (§8).</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Capabilities &amp; extensions implemented</h3>
+    <table>
+      <tr><th>Capability</th><th>What it does here</th></tr>
+      <tr><td><code>dev.ucp.shopping.catalog.search</code> / <code>.lookup</code></td><td>Federated <code>search_catalog</code> across merchants; <code>get_product</code> / <code>lookup_catalog</code> for full detail (official <code>product.json</code> shapes).</td></tr>
+      <tr><td><code>dev.ucp.shopping.cart</code></td><td>Basket building before checkout intent — <code>create/get/update/cancel_cart</code>.</td></tr>
+      <tr><td><code>dev.ucp.shopping.checkout</code></td><td>The session lifecycle (left) — every response merchant-signed.</td></tr>
+      <tr><td><code>dev.ucp.shopping.fulfillment</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>Standard vs express shipping options; choosing express changes totals and re-issues the merchant signature + Cart Mandate.</td></tr>
+      <tr><td><code>dev.ucp.shopping.discount</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>Promo codes (<code>SHOPPY10</code>, <code>SAVE20</code>) → negative discount line; invalid code → <code>warning</code> message covered by the signature.</td></tr>
+      <tr><td><code>dev.ucp.shopping.ap2_mandate</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>The security lock — §8–9.</td></tr>
+      <tr><td><code>dev.ucp.shopping.order</code></td><td>Signed order webhooks (<code>order.shipped</code>, <code>order.refunded</code>) + post-order <code>refund_order</code> / <code>file_dispute</code>.</td></tr>
+      <tr><td><code>dev.ucp.common.identity_linking</code></td><td>Business-hosted <b>OAuth 2.0</b> (RFC 8414 discovery); the agent links the account and reads history via <code>list_orders</code>, gated by the <code>dev.ucp.shopping.order:read</code> scope.</td></tr>
+    </table>
+    <div class="callout"><b>Response signing.</b> Beyond requests, the merchant signs the <code>complete_checkout</code> <i>response</i>
+    (RFC 9421, <code>@status</code> component) and the platform verifies it — so the order receipt is non-repudiable
+    (RECOMMENDED by the spec).</div>
+  </div>
+
+  <details><summary>Amounts, addresses and other schema conventions (click to expand)</summary><div class="body">
+    <ul style="font-size:14px">
+      <li><b>Amounts are minor units</b> (integer cents) everywhere on the wire: <code>$274.00 → 27400</code>. The UIs divide by 100 only for display.</li>
+      <li><b>Addresses</b> use schema.org-style fields: <code>street_address</code>, <code>address_locality</code>, <code>address_region</code>, <code>postal_code</code>, <code>address_country</code>.</li>
+      <li><b>Catalog products</b> follow <code>product.json</code>: <code>title</code>, structured <code>description {plain|html|markdown}</code>, <code>price_range</code>, <code>variants[]</code> with <code>price</code>/<code>list_price</code>, plus <code>tags</code>/<code>metadata</code> for vendor extras.</li>
+      <li><b>Orders</b> follow <code>order.json</code>: line items with object quantities <code>{original, total, fulfilled}</code> and a <code>status</code>, fulfillment <code>expectations</code> (what will happen) vs append-only <code>events</code> (what did happen).</li>
+      <li><b>Names are governed</b> by reverse-domain namespaces: <code>dev.ucp.*</code> is reserved for the UCP body; vendors must use their own (<code>org.ap2.*</code> for our AP2 services). Spec/schema URL origins must match the namespace authority.</li>
+    </ul>
+  </div></details>
+</section>
+
+<!-- ================== 8. SIGNATURES ================== -->
+<section id="signatures">
+  <h2><span class="num">9</span>Security I — PKI &amp; HTTP message signatures</h2>
+  <p class="lede">Identity in this system is <b>a URL plus a key pair</b> — no DIDs, no central registry. Every request and
+  webhook is signed with <b>RFC 9421 HTTP Message Signatures</b> and verified before any business logic runs.</p>
+
+  <div class="card">
+  <svg class="diagram" viewBox="0 0 960 330">
+    <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>
+    <rect x="20" y="30" width="250" height="270" rx="14" fill="var(--card)" stroke="var(--accent)" stroke-width="2"/>
+    <text x="145" y="60" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">SIGNER (e.g. agent)</text>
+    <g font-size="11" fill="var(--muted)">
+      <text x="40" y="92">1. body bytes → SHA-256</text>
+      <text x="55" y="109" class="m" font-size="10">Content-Digest: sha-256=:…:</text>
+      <text x="40" y="138">2. build signature base over:</text>
+      <text x="55" y="155" class="m" font-size="10">@method @authority @path</text>
+      <text x="55" y="170" class="m" font-size="10">content-digest content-type</text>
+      <text x="55" y="185" class="m" font-size="10">ucp-agent idempotency-key</text>
+      <text x="40" y="214">3. ECDSA P-256 sign (raw r‖s)</text>
+      <text x="40" y="243">4. attach headers:</text>
+      <text x="55" y="260" class="m" font-size="10">Signature-Input: sig1=(…);keyid="…"</text>
+      <text x="55" y="275" class="m" font-size="10">Signature: sig1=:base64:</text>
+      <text x="55" y="290" class="m" font-size="10">UCP-Agent: profile="https://…"</text>
+    </g>
+    <path d="M270 165 L420 165" stroke="var(--accent)" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+    <text x="345" y="152" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--accent)">signed HTTP request</text>
+    <rect x="420" y="30" width="270" height="270" rx="14" fill="var(--card)" stroke="var(--teal)" stroke-width="2"/>
+    <text x="555" y="60" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">VERIFIER (e.g. merchant)</text>
+    <g font-size="11" fill="var(--muted)">
+      <text x="440" y="92">1. recompute Content-Digest ⇒ body intact</text>
+      <text x="440" y="118">2. read profile URL from UCP-Agent</text>
+      <text x="440" y="144">3. fetch /.well-known/ucp (cached ≥60 s,</text>
+      <text x="455" y="160">HTTPS-only, no redirects)</text>
+      <text x="440" y="186">4. find JWK by keyid (kid)</text>
+      <text x="440" y="212">5. rebuild signature base, verify ECDSA</text>
+      <text x="440" y="238">6. trust registry check (AP2 allowlist)</text>
+      <text x="440" y="264">7. idempotency replay check</text>
+      <text x="440" y="288" font-weight="700" fill="var(--green)">✓ only then: dispatch the tool</text>
+    </g>
+    <path d="M690 150 L760 150" stroke="var(--teal)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+    <rect x="760" y="110" width="180" height="86" rx="12" fill="var(--accent-soft)" stroke="var(--accent)"/>
+    <text x="850" y="142" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">signer's profile</text>
+    <text x="850" y="162" text-anchor="middle" font-size="10.5" class="m" fill="var(--muted)">/.well-known/ucp</text>
+    <text x="850" y="180" text-anchor="middle" font-size="10.5" class="m" fill="var(--muted)">signing_keys[ kid… ]</text>
+  </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">What signatures defeat</h3>
+      <table>
+        <tr><th>Attack</th><th>Defense</th></tr>
+        <tr><td>Impersonation</td><td>Key resolved from the <i>claimed</i> profile — you can't claim an identity whose private key you don't hold.</td></tr>
+        <tr><td>Tampering</td><td><code>Content-Digest</code> binds the exact body bytes; any change breaks the signature.</td></tr>
+        <tr><td>Cross-host replay</td><td><code>@authority</code> + <code>@path</code> are signed — a request for one host can't be replayed at another.</td></tr>
+        <tr><td>Same-host replay</td><td>Signed <code>Idempotency-Key</code>: duplicates return the cached response; same key + different body → <b>409</b>.</td></tr>
+        <tr><td>Identity confusion</td><td><code>meta["ucp-agent"]</code> must equal the signed <code>UCP-Agent</code> header — verified binding.</td></tr>
+      </table>
+    </div>
+    <div class="card"><h3 style="margin-top:0">Trust model</h3>
+      <p style="font-size:13.5px">Two layers, per AP2's short-term model:</p>
+      <ol style="font-size:13.5px">
+        <li><b>Authenticity</b> (cryptographic): the signature proves <i>who</i> sent it and <i>what</i> was sent.</li>
+        <li><b>Authorization</b> (policy): each service holds a curated <b>allowlist</b> of peer profile URLs. Authentic-but-unknown
+        callers get <code>403 profile_not_trusted</code> before any profile fetch — capping the discovery budget against malicious URLs.</li>
+      </ol>
+      <p style="font-size:13.5px;color:var(--muted)">Keys are ES256 (ECDSA P-256/SHA-256) with raw <code>r‖s</code> encoding —
+      mind the DER/IEEE-P1363 trap if you port this. Webhooks <b>must</b> be signed; the agent rejects unsigned order events.
+      Demo simplification: keys are generated in-memory at boot and transport is plain localhost HTTP — the verification
+      pipeline is unchanged from production behavior.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================== 9. AP2 ================== -->
+<section id="ap2">
+  <h2><span class="num">10</span>Security II — AP2 &amp; the mandate chain</h2>
+  <p class="lede">HTTP signatures authenticate <i>services</i>. Mandates authenticate <i>the human</i>. AP2's verifiable
+  credentials prove — durably, for disputes months later — that the user authorized exactly this purchase.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Four mandates, one chain</h3>
+    <svg class="diagram" viewBox="0 0 960 400">
+      <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker></defs>
+      <rect x="20" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="127" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">① Intent Mandate</text>
+      <text x="127" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">“ANC headphones, ≤ $300, 2-day”</text>
+      <text x="127" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">the agent's authorization boundary</text>
+      <text x="127" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">JWS · user device key</text>
+      <rect x="285" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="392" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">② Cart Mandate</text>
+      <text x="392" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">exact items + total ($329.13)</text>
+      <text x="392" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">EMBEDS merchant_authorization ↓</text>
+      <text x="392" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">JWS · user + merchant seals</text>
+      <rect x="550" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="657" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">③ Checkout Mandate</text>
+      <text x="657" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">ap2.checkout_mandate (real SD-JWT+kb)</text>
+      <text x="657" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">embeds the FULL signed checkout</text>
+      <text x="657" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">required at complete_checkout</text>
+      <rect x="20" y="250" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="127" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">④ Payment Mandate</text>
+      <text x="127" y="298" text-anchor="middle" font-size="10.5" fill="var(--muted)">amount + payee + checkout binding</text>
+      <text x="127" y="316" text-anchor="middle" font-size="10.5" fill="var(--muted)">travels INSIDE the composite token</text>
+      <text x="127" y="341" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">verified by the PSP</text>
+      <rect x="285" y="250" width="215" height="110" rx="13" fill="var(--accent-soft)" stroke="var(--teal)" stroke-width="2"/>
+      <text x="392" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">merchant_authorization</text>
+      <text x="392" y="298" text-anchor="middle" font-size="10.5" fill="var(--muted)">detached JWS (h..sig) over</text>
+      <text x="392" y="316" text-anchor="middle" font-size="10.5" fill="var(--muted)">JCS(checkout − ap2)</text>
+      <text x="392" y="341" text-anchor="middle" font-size="10" fill="var(--teal)" font-weight="700">merchant key · proves the terms</text>
+      <rect x="550" y="250" width="390" height="110" rx="13" fill="var(--card)" stroke="var(--line)"/>
+      <text x="745" y="278" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">Nested binding (why it's tamper-proof)</text>
+      <text x="745" y="300" text-anchor="middle" font-size="10.5" fill="var(--muted)">user signature ⊃ checkout ⊃ merchant signature ⊃ terms</text>
+      <text x="745" y="320" text-anchor="middle" font-size="10.5" fill="var(--muted)">change ANY digit of the cart and BOTH seals break —</text>
+      <text x="745" y="338" text-anchor="middle" font-size="10.5" fill="var(--muted)">neither party can later claim different terms</text>
+      <g stroke="var(--violet)" stroke-width="1.8" fill="none">
+        <path d="M235 85 L285 85" marker-end="url(#a4)"/>
+        <path d="M500 85 L550 85" marker-end="url(#a4)"/>
+        <path d="M127 140 L127 250" marker-end="url(#a4)"/>
+        <path d="M392 250 L392 140" marker-end="url(#a4)"/>
+      </g>
+      <text x="243" y="75" font-size="9.5" fill="var(--violet)">derived_from</text>
+      <text x="505" y="75" font-size="9.5" fill="var(--violet)">embeds</text>
+      <text x="134" y="200" font-size="9.5" fill="var(--violet)">links cart_mandate</text>
+      <text x="398" y="200" font-size="9.5" fill="var(--violet)">embedded in cart + checkout</text>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">Who signs what</h3>
+      <table>
+        <tr><th>Artifact</th><th>Signer / key</th><th>Verified by</th></tr>
+        <tr><td><code>merchant_authorization</code></td><td>Merchant tenant key</td><td>Agent (before showing the user anything), merchant itself at complete</td></tr>
+        <tr><td>Intent / Cart / Payment / Checkout mandates</td><td><b>User device key</b>, held at the Credentials Provider, released only after (simulated) biometric approval on a trusted surface</td><td>Merchant (checkout mandate), PSP (payment mandate)</td></tr>
+        <tr><td>HTTP requests &amp; webhooks</td><td>Each service's key</td><td>Every recipient, every time</td></tr>
+      </table>
+      <p style="font-size:13px;color:var(--muted)">Key discovery is uniform: all public keys are JWKs in profile
+      <code>signing_keys</code>. The user device key is published in the <b>CP profile</b> — that's how the merchant and PSP
+      resolve it.</p>
+    </div>
+    <div class="card"><h3 style="margin-top:0">Why JCS canonicalization?</h3>
+      <p style="font-size:13.5px">HTTP signatures hash <i>raw bytes</i> — fine for transient requests verified on the same
+      connection. Mandates are different: they're <b>durable evidence</b>, stored for months and re-serialized by every system
+      they pass through (merchant → PSP → card network). <b>RFC 8785 (JCS)</b> guarantees that semantically identical JSON
+      always produces byte-identical input, so the signature is reproducible by anyone, anytime.</p>
+      <p style="font-size:13.5px">The merchant's rule: sign <code>JCS(checkout − ap2)</code> as a <b>detached JWS</b>
+      (<code>header..signature</code>, RFC 7515 App. F) — excluding the <code>ap2</code> field makes the scheme self-referential-safe
+      and forward-compatible with future AP2 fields.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">The checkout mandate is a real SD-JWT+kb</h3>
+    <p style="font-size:14px"><code>ap2.checkout_mandate</code> isn't a plain JWS — it's a proper
+    <b>SD-JWT with Key Binding</b> (<code>dc+sd-jwt~kb</code>), the verifiable-credential format AP2 calls for:</p>
+    <div class="kv">
+      <span class="k">issuer</span><span>The Credentials Provider signs the credential with its service key (it <i>issued</i> the user's device key at enrollment).</span>
+      <span class="k">holder (key binding)</span><span>A Key-Binding JWT (<code>typ=kb+jwt</code>) signed by the <b>user's device key</b> binds the presentation to <code>aud</code> = this merchant's profile, <code>nonce</code> = the checkout id, and <code>sd_hash</code> — so the same credential can't be replayed at another merchant or for another checkout.</span>
+      <span class="k">selective disclosure</span><span>Claims like <code>sub</code> (user id) and <code>buyer_email</code> are split into disclosures; the agent reveals the user id but <b>withholds the email</b> — the merchant verifies the credential without learning data it doesn't need.</span>
+      <span class="k">nested binding</span><span>The credential embeds the full merchant-signed checkout, so the user's key-binding signature transitively covers the merchant's signature over the exact terms.</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Wire format: <code>&lt;issuer-jwt&gt;~&lt;disclosure&gt;…~&lt;kb-jwt&gt;</code>. The
+    <code>e2e</code> suite validates this structure (issuer JWT + disclosures + a <code>kb+jwt</code> binding aud/nonce/sd_hash).</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Failure &amp; recovery paths (not just the happy case)</h3>
+    <table>
+      <tr><th>Path</th><th>How it plays out</th></tr>
+      <tr><td>🔐 3-D Secure step-up</td><td>The PSP returns <code>requires_challenge</code>; the checkout goes <code>requires_escalation</code> with a <code>continue_url</code>. The user resolves the challenge on the CP's trusted surface (<code>resolve_challenge</code> → attestation), and the agent retries <code>complete_checkout</code> with the attestation — which now succeeds.</td></tr>
+      <tr><td>❌ Hard decline</td><td>The issuer declines; the merchant returns a <code>payment_declined</code> business outcome with a <code>continue_url</code> web fallback. (Driven by the chosen test card.)</td></tr>
+      <tr><td>↩️ Refund</td><td><code>refund_order</code> → PSP <code>refund_payment</code> → an <code>adjustments</code> entry on the order + a signed <code>order.refunded</code> webhook. Supports partial refunds.</td></tr>
+      <tr><td>⚖️ Dispute</td><td><code>file_dispute</code> attaches the user-signed mandate chain (cart + checkout mandates + verification log) as the adjudicator's cryptographic evidence — exactly the AP2 dispute model.</td></tr>
+    </table>
+  </div>
+
+    <div class="card">
+    <h3 style="margin-top:0">Real passkey / Touch ID user verification <span class="tag" style="background:var(--accent-soft);color:var(--accent)">flag: PASSKEYS (on)</span></h3>
+    <p style="font-size:14px">A passkey can't sign arbitrary bytes, but it's exactly AP2's "hardware-backed device key with in-session
+    authentication." So when the user enrolls a platform passkey, the Credentials Provider <b>gates the checkout-mandate signature</b>
+    on a verified assertion whose <b>challenge is <code>SHA-256(JCS(checkout − ap2))</code></b> — Touch ID over the <i>exact</i>
+    signed terms, with the UV (user-verified) flag checked. Two paths, graceful fallback:</p>
+    <div class="kv">
+      <span class="k">WebAuthn (Safari + Chrome)</span><span>The Google-Pay sheet runs <code>navigator.credentials.get()</code> → native Touch ID. On <code>localhost</code> (a secure context) no HTTPS certs are needed.</span>
+      <span class="k">Secure Payment Confirmation</span><span>On Chrome, the browser renders its own native sheet showing the amount + instrument, and the assertion (<code>type: payment.get</code>) covers those transaction details. Attempted first; falls back to WebAuthn.</span>
+      <span class="k">not enrolled</span><span>Falls back to the simulated approval — casual users are never blocked. The 3-D Secure step-up can reuse the same passkey prompt.</span>
+      <span class="k">evidence</span><span>The verified assertion (UV, credential id, bound challenge) is stored with the order as additional dispute evidence. Disable with <code>PASSKEYS=0</code>.</span>
+    </div>
+  </div>
+
+  <details><summary>The complete verification gauntlet at <code>complete_checkout</code></summary><div class="body">
+    <div class="kv">
+      <span class="k">merchant: mandate present?</span><span>AP2 negotiated ⇒ missing <code>ap2.checkout_mandate</code> → <code>mandate_required</code>. The session cannot downgrade to an unprotected flow (“security-locked”).</span>
+      <span class="k">merchant: SD-JWT+kb verify</span><span>Issuer signature (CP key from its profile), key-binding signature (user device key), <code>aud</code>/<code>nonce</code>/<code>sd_hash</code> and expiry → <code>mandate_invalid_signature</code> / <code>mandate_expired</code> / <code>agent_missing_key</code> / <code>mandate_scope_mismatch</code>.</span>
+      <span class="k">merchant: own seal</span><span>The <code>merchant_authorization</code> <i>inside</i> the mandate must verify against the merchant's <b>own</b> key → <code>merchant_authorization_invalid</code>.</span>
+      <span class="k">merchant: terms match</span><span>Embedded checkout id + total must equal the live session → <code>mandate_scope_mismatch</code>.</span>
+      <span class="k">merchant: handler check</span><span><code>handler_id</code> must be in the advertised handler set (prevents key-confusion attacks).</span>
+      <span class="k">PSP: payment mandate</span><span>Independently verifies signature, expiry, <b>amount</b>, <b>payee</b> (merchant profile URL), <b>checkout id</b>, and cart-mandate linkage — then, and only then, pulls credentials from the CP.</span>
+      <span class="k">CP: single-use token</span><span>Credentials released per token (a 3DS authorize→retry counts as one settlement); further replay → <code>token_replayed</code>.</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Everything verified is stored with the order as <b>dispute-ready evidence</b> —
+    open any order in the Merchant Portal to see the full verification log, the mandate JWS and the merchant seal.</p>
+  </div></details>
+</section>
+
+<!-- ================== 10. THREAT MODEL ================== -->
+<section id="threat">
+  <h2><span class="num">11</span>Threat model — what happens if…</h2>
+  <p class="lede">The end-to-end suite (<code>npm run e2e</code>) actively attacks the system. Every row below is a real,
+  automated negative test.</p>
+  <div class="card">
+    <table>
+      <tr><th>Attack attempt</th><th>Outcome</th><th>Code</th></tr>
+      <tr><td>Unsigned <code>tools/call</code> to a merchant</td><td>Rejected before dispatch, HTTP 401</td><td><code>signature_missing</code></td></tr>
+      <tr><td>Request without <code>meta["ucp-agent"]</code></td><td>Rejected, JSON-RPC −32001</td><td><code>invalid_profile_url</code></td></tr>
+      <tr><td>Valid signature, unknown platform profile</td><td>Rejected by trust registry, HTTP 403</td><td><code>profile_not_trusted</code></td></tr>
+      <tr><td><code>meta</code> profile ≠ signed <code>UCP-Agent</code> header</td><td>Identity-binding violation, HTTP 403</td><td><code>profile_not_trusted</code></td></tr>
+      <tr><td>Trusted profile URL, wrong private key</td><td>kid not found in published JWKs, HTTP 401</td><td><code>key_not_found</code></td></tr>
+      <tr><td><code>complete_checkout</code> without a mandate</td><td>Rejected — session is security-locked</td><td><code>mandate_required</code></td></tr>
+      <tr><td>Replay of a captured request</td><td>Cached response (no side effects); altered body → 409</td><td><code>idempotency_conflict</code></td></tr>
+      <tr><td>Re-using a spent network token</td><td>CP refuses to release credentials</td><td><code>token_replayed</code></td></tr>
+      <tr><td>Cart modified after user approval</td><td>Totals no longer match the mandate</td><td><code>mandate_scope_mismatch</code></td></tr>
+    </table>
+    <div class="callout danger"><b>PCI scope.</b> The agent and merchant never see a PAN — only display
+    data (<code>visa •••• 4291</code>) and opaque single-use tokens. Raw card references live exclusively inside the Credentials
+    Provider and are released only to the PSP, after mandate verification, exactly once.</div>
+
+    <h3>Run any flow from the UI — the scenario console</h3>
+    <p style="font-size:14px">The Shopping Agent ships a one-click <b>scenario console</b> (and <code>POST /api/scenario</code>).
+    Each scenario drives real signed protocol calls you watch in the trace — success, failure and capability flows side by side:</p>
+    <div class="grid4" style="margin-top:6px">
+      <div class="card" style="margin:0;border-top:4px solid var(--green)"><b style="font-size:13.5px">Success</b>
+        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>happy</code> full purchase · <code>express</code> next-day shipping (totals change) · <code>promo</code> discount code · <code>human_not_present</code> autonomous buy under a signed intent</p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--red)"><b style="font-size:13.5px">Failure / attack</b>
+        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>threeds</code> 3-D Secure step-up → resolve → retry · <code>decline</code> hard decline · <code>tamper</code> · <code>replay</code> · <code>expired</code> · <code>stolen_key</code></p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--accent)"><b style="font-size:13.5px">Capabilities</b>
+        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>cart</code> · <code>lookup</code> (get_product) · <code>refund</code> (PSP + adjustment) · <code>dispute</code> (mandate evidence) · <code>identity</code> (OAuth + scoped history)</p></div>
+      <div class="card" style="margin:0;border-top:4px solid var(--violet)"><b style="font-size:13.5px">LLM agent loop</b>
+        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0">With an API key set, an LLM drives the tool calls (search → select → checkout → pay) end to end via <code>POST /api/agent</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================== 11. OBSERVABILITY ================== -->
+<section id="controls">
+  <h2>Agent-economy controls — spend policy, KYA, multi-rail, audit</h2>
+  <p class="lede">When agents become economic actors, the protocol layer alone isn't enough: the user needs to
+  <b>constrain</b> what the agent may spend, the network needs to <b>know and score</b> the agent, payments need
+  the <b>right rail</b> per transaction, and everything must leave a <b>tamper-evident record</b>. This suite
+  implements all four pillars (inspired by the payment networks' agentic-commerce frameworks — agentic tokens,
+  Know-Your-Agent, multi-rail settlement).</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">1 · Spend controls &amp; programmable payment <span class="tag">Walletly → Agent permissions</span></h3>
+    <p style="font-size:14px">A per-agent consent policy lives at the <b>Credentials Provider</b> — the user's trusted surface —
+    and works like a network-enforced agentic-token scope:</p>
+    <div class="kv">
+      <span class="k">autonomy</span><span><code>always_ask</code> · <code>ask_above</code> (autonomous below a threshold) · <code>autonomous</code> — gates human-not-present purchases</span>
+      <span class="k">caps</span><span>per-transaction cap + total budget with a live <b>spent</b> meter (minor units)</span>
+      <span class="k">allowlist</span><span>optional merchant allowlist + validity window + preferred settlement rail</span>
+      <span class="k">enforced 3×</span><span><code>mint_instrument</code> (the policy snapshot is <b>bound into the single-use token</b>) → <code>sign_mandate(PaymentMandate)</code> → <b>PSP re-check</b> of the token-bound scope at authorization (defense in depth)</span>
+      <span class="k">errors</span><span><code>policy_per_tx_cap_exceeded</code> · <code>policy_budget_exceeded</code> · <code>policy_merchant_not_allowed</code> · <code>policy_autonomy_violation</code> · <code>policy_window_expired</code></span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Scenarios: <code>over_budget</code>, <code>merchant_blocked</code>, <code>autonomy</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">2 · Verified intent across parties</h3>
+    <p style="font-size:14px">The user's signed <b>IntentMandate</b> no longer stops at the agent. At
+    <code>complete_checkout</code> the agent presents it (<code>ap2.intent_mandate</code>); the <b>merchant</b> verifies the
+    signature against the CP's published JWKs and checks the basket total against the signed purchase ceiling, then
+    <b>forwards it to the PSP</b>, which re-validates independently. Both verification logs gain an
+    <code>intent_mandate</code> row — the purchase is provably within what the user asked for, at every hop.
+    The signed ceiling is the item budget + 20% fees headroom + $20 shipping (taxes and small add-ons are
+    user-approved later via the cart/checkout mandates).</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">3 · Multi-rail settlement <span class="tag">com.google.pay + com.paystream.rtp</span></h3>
+    <p style="font-size:14px">Merchants and the wallet advertise <b>two UCP payment handlers</b>; the agent selects the
+    optimal rail per transaction and the choice is visible in the trace ("Rail selection"):</p>
+    <div class="kv">
+      <span class="k">card network</span><span>single-use network token via Google Pay — wide acceptance, chargeback rights, auth → capture</span>
+      <span class="k">RTP</span><span>instant bank transfer from an RTP-capable checking account — instant fiat settlement, no card network</span>
+      <span class="k">selection</span><span>explicit choice &gt; the policy's <code>preferred_rail</code> &gt; auto (≥ $500 → RTP, else card)</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Scenario: <code>rtp_rail</code>. The PSP records the rail on every transaction.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">4 · Know Your Agent (KYA) + reputation <span class="tag">PayStream registry</span></h3>
+    <p style="font-size:14px">The PSP hosts an <b>agent registry</b> — KYC for agents. Each agent has a KYA level
+    (<code>verified</code>/<code>basic</code>), a status, and a behavior-driven <b>reputation score</b> (clean capture +1,
+    decline −8, policy violation −8, velocity −10). The merchant calls <code>lookup_agent</code> before completing a
+    checkout and refuses suspended or low-reputation agents (<code>agent_untrusted</code>); the PSP enforces the same gate
+    using the <code>agent</code> claim inside the PaymentMandate. Scenario: <code>kya_blocked</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">5 · Velocity rules — agent-native fraud detection</h3>
+    <p style="font-size:14px">Agent traffic is thousands of transactions per second, not dozens per day. The PSP
+    rate-limits authorizations <b>per agent</b> over a rolling 60-second window (<code>PSP_VELOCITY_LIMIT</code>, default 20).
+    Exceeding it declines with <code>velocity_exceeded</code> (HTTP 429) and dings the agent's reputation.
+    Scenario: <code>velocity</code> (limit lowered to 2, third rapid purchase declined).</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">6 · Immutable audit trail + evidence bundle</h3>
+    <p style="font-size:14px">Every trace event is <b>hash-chained</b>: <code>hash = SHA-256(seq, prev_hash, core fields, payload hash)</code>.
+    Editing any past event breaks every subsequent hash — a tamper-evident log. <code>POST /api/audit/verify</code> re-derives
+    the chain; <b>Export evidence bundle</b> (chip after any purchase) downloads a dispute-ready JSON with all signed
+    mandates (intent, cart, payment, checkout SD-JWT+kb) plus the chained event log.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">7 · Post-purchase agency — delivery monitoring</h3>
+    <p style="font-size:14px">The agent's job doesn't end at payment. <b>Check delivery promise</b> re-reads the order and
+    compares the carrier's current expectation (<code>fulfillment.expectations[0].fulfillable_on</code>) with the promise made
+    at checkout. If the ETA slipped, the agent proactively secures a <b>10% partial refund</b> through the standard
+    refund flow (PSP credit + signed order adjustment + webhook). Scenario: <code>late_delivery</code>.</p>
+  </div>
+</section>
+
+<section id="observability">
+  <h2><span class="num">12</span>Observability — logs &amp; request tracing</h2>
+  <p class="lede">A protocol you can't watch is a protocol you can't trust. Every service keeps an audit trail, and the agent
+  streams a live wire-level trace into the UI.</p>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">The Protocol Trace (agent UI)</h3>
+      <p style="font-size:13.5px">The orchestrator wraps every outbound <code>tools/call</code> and emits structured
+      <b>TraceEvents</b> over <b>Server-Sent Events</b> (<code>GET /api/trace/{session}</code>) to the “Protocol trace” panel:</p>
+      <ul style="font-size:13.5px">
+        <li><span class="tag ucp">UCP</span> request/response pairs — full JSON-RPC body <i>plus the actual signature headers</i> (<code>Signature-Input</code>, <code>Content-Digest</code>, <code>Idempotency-Key</code>) and round-trip latency,</li>
+        <li><span class="tag ap2">AP2</span> mandate cards — payload, seal type, truncated JWS,</li>
+        <li><span class="tag pki">PKI</span> verification events — e.g. “verify merchant_authorization: kid=wavelength-2026 ✓”.</li>
+      </ul>
+      <p style="font-size:13px;color:var(--muted)">Events are buffered per session, so reconnecting replays the full history.</p>
+    </div>
+    <div class="card"><h3 style="margin-top:0">Correlating a request across services</h3>
+      <p style="font-size:13.5px">Several identifiers tie the distributed story together:</p>
+      <div class="kv">
+        <span class="k">Idempotency-Key</span><span>Unique per call, <i>signed</i>, logged by caller and callee — the per-request correlation id.</span>
+        <span class="k">checkout_id</span><span>Binds agent session ↔ merchant session ↔ mandates ↔ PSP transaction ↔ order ↔ webhook.</span>
+        <span class="k">mandate ids</span><span><code>intent_… → cart_… → pay_…</code> — the authorization chain, visible in the wallet log, the order evidence and the PSP verification record.</span>
+        <span class="k">transaction_id</span><span>PSP record carrying the full mandate-verification breakdown.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Where to look</h3>
+    <table>
+      <tr><th>Surface</th><th>What you see</th></tr>
+      <tr><td>Shoppy UI → Protocol trace <span class="mono">:4100</span></td><td>Every wire interaction of the session, live</td></tr>
+      <tr><td>Merchant Portal <span class="mono">:4101</span></td><td>Per-tenant activity log, checkout sessions, orders with <b>dispute-ready AP2 evidence</b> (mandates + verification log), manual “Ship now”</td></tr>
+      <tr><td>Walletly <span class="mono">:4102</span></td><td>Signed-mandate audit log (kind, approval channel, full JWS), minted tokens with consumed/active state</td></tr>
+      <tr><td>PayStream <span class="mono">:4103</span></td><td>Transactions with the complete verification breakdown and AP2 agent-presence signals</td></tr>
+      <tr><td>Terminal (<code>npm run dev</code>)</td><td>Structured per-service console logs: <span class="mono">[merchant:wavelength] ap2.verify: checkout_mandate verified…</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ================== 12. CONFORMANCE ================== -->
+<section id="conformance">
+  <h2><span class="num">13</span>Schema composition &amp; conformance testing</h2>
+  <p class="lede">“Compliant” is a claim; these are the proofs. The repo vendors the <b>official UCP schema tree</b> and validates
+  live traffic against it.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">How extensions compose</h3>
+    <p style="font-size:14px">UCP schemas are modular: the base <code>checkout.json</code> stays clean, and each extension ships a
+    <code>$defs["dev.ucp.shopping.checkout"]</code> that augments it via <code>allOf</code>. Per the spec's <i>Resolution Flow</i>,
+    a validator composes the base with every <b>active</b> extension:</p>
+    <div class="codeblock"><button class="copy">copy</button><pre>
+composed_checkout = allOf [
+  checkout.json,                                          <span class="c">// base capability</span>
+  fulfillment.json#/$defs/dev.ucp.shopping.checkout,      <span class="c">// + fulfillment fields</span>
+  ap2_mandate.json#/$defs/dev.ucp.shopping.checkout       <span class="c">// + the ap2 object</span>
+]</pre></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0"><code>npm run validate</code> — 20 checks</h3>
+      <ul style="font-size:13.5px">
+        <li>Loads all <b>87 official schemas</b> into Ajv (draft 2020-12) and resolves every <code>$ref</code> recursively — one broken link fails the run.</li>
+        <li>Audits every <code>ucp.dev</code> URL in our source <i>and inside the live profile documents</i> against the official tree (this catch found a reference to a non-existent <code>catalog.json</code>).</li>
+        <li>Runs the real purchase flow and validates raw wire artifacts: business profiles, platform profile, checkout responses (composed), catalog responses, the order webhook.</li>
+      </ul>
+    </div>
+    <div class="card"><h3 style="margin-top:0"><code>npm run e2e</code> — 51 checks</h3>
+      <ul style="font-size:13.5px">
+        <li>Profile structure, Cache-Control, MCP handshake, <code>tools/list</code>, dual-output envelopes.</li>
+        <li>The full happy path with exact totals (minor-unit math), mandate chain, capture, webhook, cross-service state consistency.</li>
+        <li>All the negative attacks from §10.</li>
+        <li>AP2 artifact structure: detached-JWS <code>merchant_authorization</code>, and the SD-JWT+kb <code>checkout_mandate</code> (issuer JWT + disclosures + key-binding JWT with <code>typ=kb+jwt</code> binding aud+nonce).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card"><h3 style="margin-top:0"><code>npm run conformance</code> — 28 checks across 11 categories</h3>
+    <p style="font-size:13.5px">The official suite (<code>Universal-Commerce-Protocol/conformance</code>, vendored under
+    <code>conformance-official/</code>) is a Python/pytest harness bound to the REST reference server, so it can't run verbatim
+    against our MCP-transport services. <code>npm run conformance</code> asserts the <b>same categories</b> against our live
+    services and prints a per-category PASS/FAIL report: <code>protocol</code>, <code>binding</code>,
+    <code>checkout_lifecycle</code>, <code>fulfillment</code>, <code>business_logic</code>, <code>idempotency</code>,
+    <code>ap2</code>, <code>card_credential</code>, <code>order</code>, <code>webhook</code>, <code>validation</code>.</p>
+  </div>
+
+  <div class="callout warn"><b>Documented simplifications.</b> In-memory keys/state (restart = clean slate); plain HTTP on
+  localhost (signature pipeline unchanged); the checkout mandate is a real SD-JWT+kb (issuer + holder key-binding + selective disclosure); biometric approval and the 3-D Secure bank page are simulated; PSP issuer/network authorization, declines and 3DS triggers are simulated by the chosen test card.</div>
+</section>
+
+<!-- ================== 13. REFERENCE ================== -->
+<section id="reference">
+  <h2><span class="num">14</span>Reference</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">Run it</h3>
+      <div class="codeblock"><button class="copy">copy</button><pre>
+npm install
+npm run dev        <span class="c"># all four services</span>
+<span class="c"># http://localhost:4100  Shoppy (start here)</span>
+<span class="c"># http://localhost:4101  Merchant Portal</span>
+<span class="c"># http://localhost:4102  Credentials Provider</span>
+<span class="c"># http://localhost:4103  Payment Provider</span>
+npm run e2e         <span class="c"># 51-check end-to-end</span>
+npm run conformance <span class="c"># 28-check category report</span>
+npm run validate    <span class="c"># 20-check schema conformance</span>
+npm run stop        <span class="c"># shut down all four servers (by port)</span>
+
+<span class="c"># optional LLM (intent parsing + autonomous agent loop):</span>
+OPENAI_API_KEY=sk-…    npm run dev   <span class="c"># gpt-4o-mini</span>
+ANTHROPIC_API_KEY=sk-… npm run dev   <span class="c"># Claude Haiku</span></pre></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Error code registry (as implemented)</h3>
+      <table style="font-size:12.5px">
+        <tr><th>Layer</th><th>Codes</th></tr>
+        <tr><td>Discovery (−32001)</td><td><code>invalid_profile_url</code> <code>profile_unreachable</code></td></tr>
+        <tr><td>Auth (−32000, 401/403)</td><td><code>signature_missing</code> <code>signature_invalid</code> <code>key_not_found</code> <code>profile_not_trusted</code></td></tr>
+        <tr><td>Integrity (−32600, 400)</td><td><code>digest_mismatch</code> <code>invalid_request</code></td></tr>
+        <tr><td>AP2 (enum)</td><td><code>mandate_required</code> <code>mandate_invalid_signature</code> <code>mandate_expired</code> <code>mandate_scope_mismatch</code> <code>merchant_authorization_invalid</code> <code>merchant_authorization_missing</code> <code>agent_missing_key</code></td></tr>
+        <tr><td>Identity linking (401/403)</td><td><code>invalid_token</code> <code>insufficient_scope</code></td></tr>
+        <tr><td>Payment / wallet</td><td><code>payment_declined</code> <code>requires_3ds</code> <code>token_replayed</code> <code>token_not_found</code> <code>method_not_tokenizable</code></td></tr>
+        <tr><td>Business (result envelope)</td><td><code>item_unavailable</code> <code>invalid_state</code> <code>payment_required</code> <code>invalid_handler</code> <code>invalid_discount_code</code> <code>not_found</code></td></tr>
+        <tr><td>Idempotency (409)</td><td><code>idempotency_conflict</code></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Primary sources</h3>
+    <table>
+      <tr><td><a href="https://ucp.dev/2026-04-08/specification/overview/" target="_blank">UCP specification overview</a></td><td>profiles, negotiation, transports, payments, errors</td></tr>
+      <tr><td><a href="https://ucp.dev/2026-04-08/specification/checkout-mcp/" target="_blank">Checkout — MCP binding</a></td><td>tools/call shapes, dual output, conformance rules</td></tr>
+      <tr><td><a href="https://ucp.dev/2026-04-08/specification/signatures/" target="_blank">Message Signatures</a></td><td>RFC 9421/9530 profile, key discovery, rotation</td></tr>
+      <tr><td><a href="https://ucp.dev/2026-04-08/specification/ap2-mandates/" target="_blank">AP2 Mandates extension</a></td><td>merchant_authorization, checkout mandate, error enum</td></tr>
+      <tr><td><a href="https://ap2-protocol.org/specification" target="_blank">AP2 protocol</a></td><td>roles, mandate semantics, dispute model</td></tr>
+      <tr><td class="mono">RFC 9421 · 9530 · 8785 · 7515 · 7517</td><td>HTTP signatures · Content-Digest · JCS · JWS · JWK</td></tr>
+    </table>
+  </div>
+  <p class="footer">UCP + AP2 Reference Suite — single-file documentation, kept in sync with the implementation.
+  Everything described here is exercised by <code>npm run e2e</code> (51), <code>npm run validate</code> (20) and
+  <code>npm run conformance</code> (28) — all green.</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ---------- theme ---------- */
+function toggleTheme(){
+  const r=document.documentElement;
+  r.dataset.theme=r.dataset.theme==='dark'?'':'dark';
+  try{localStorage.setItem('ucpdoc-theme',r.dataset.theme)}catch(e){}
+}
+try{const t=localStorage.getItem('ucpdoc-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+
+/* ---------- scrollspy + progress ---------- */
+const links=[...document.querySelectorAll('.nav a')];
+const sections=links.map(a=>document.querySelector(a.getAttribute('href')));
+function spy(){
+  const y=window.scrollY+140;
+  let active=0;
+  sections.forEach((s,i)=>{if(s&&s.offsetTop<=y)active=i});
+  links.forEach((a,i)=>a.classList.toggle('active',i===active));
+  const max=document.body.scrollHeight-window.innerHeight;
+  document.getElementById('progress').style.width=(max>0?100*window.scrollY/max:0)+'%';
+}
+addEventListener('scroll',spy,{passive:true});spy();
+
+/* ---------- copy buttons ---------- */
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',()=>{
+  navigator.clipboard.writeText(b.nextElementSibling.textContent.trim());
+  b.textContent='copied ✓';setTimeout(()=>b.textContent='copy',1400);
+}));
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('[data-tabs]').forEach(bar=>{
+  const panes=document.querySelector(`[data-panes="${bar.dataset.tabs}"]`).children;
+  [...bar.children].forEach((btn,i)=>btn.addEventListener('click',()=>{
+    [...bar.children].forEach(b=>b.classList.remove('on'));
+    [...panes].forEach(p=>p.classList.remove('on'));
+    btn.classList.add('on');panes[i].classList.add('on');
+  }));
+});
+
+/* ---------- interactive journey ---------- */
+const STEPS=[
+ {t:'Discovery',tag:'ucp',s:'GET /.well-known/ucp × 4 merchants',
+  d:`The agent fetches each business profile. From <code>ucp.services</code> it resolves the live <b>MCP endpoint</b>; from <code>signing_keys</code> it learns the keys it will later verify signatures against. Profiles are cached (≥60s TTL floor, HTTPS-only, no redirects in production).`,
+  c:`profiles = await fetch('/m/{id}/.well-known/ucp')  // × wavelength, soundhub, electromart, audionest
+endpoint  = profiles[id].ucp.services['dev.ucp.shopping'].find(s => s.transport === 'mcp').endpoint`},
+ {t:'Negotiation',tag:'ucp',s:'capability intersection',
+  d:`The spec's intersection algorithm runs per merchant: same capability name, mutual version, then orphaned extensions are pruned. <code>dev.ucp.shopping.ap2_mandate</code> survives everywhere ⇒ every session is <b>security-locked</b>: unsigned checkouts and mandate-less completion are now protocol violations.`,
+  c:`intersection = [checkout, catalog.search, order, fulfillment→checkout, ap2_mandate→checkout]
+security_locked = true`},
+ {t:'Intent Mandate',tag:'ap2',s:'user signs the constraints',
+  d:`The parsed constraints (category, features, ≤$300, 2-day) are sent to the Credentials Provider, which obtains user approval on a trusted surface and signs an <b>Intent Mandate</b> with the <b>user device key</b>. This is the agent's authorization boundary — everything later must fit inside it.`,
+  c:`sign_mandate(kind: 'IntentMandate', payload: { constraints: { max_total: {amount: 30000, currency:'USD'},
+  required_features: ['noise-cancelling','over-ear'], delivery_by_days: 2 }, human_present: true })`},
+ {t:'Federated search',tag:'ucp',s:'search_catalog × eligible merchants',
+  d:`One signed <code>search_catalog</code> call per merchant, with the official <code>filters.price.max</code> filter. Responses contain <code>product.json</code>-shaped products (price_range, variants, structured descriptions); the agent merges them into per-product offer lists. ElectroMart's Cadence ships in 3–4 days, so the 2-day constraint correctly excludes that offer.`,
+  c:`tools/call search_catalog { query, filters: { price: { max: 30000 }, ship_within_days: 2 } }
+→ { ucp: {…}, products: [ { id, title, description: {plain}, price_range, variants: [...] } ] }`},
+ {t:'Create checkout',tag:'ucp',s:'create_checkout → signed terms',
+  d:`The agent opens one checkout session with the chosen merchant (line items, buyer, shipping destination). The merchant computes totals — <b>minor units</b>, exactly one subtotal and one total, negative discount, fulfillment line — and embeds <code>ap2.merchant_authorization</code>.`,
+  c:`tools/call create_checkout { checkout: { line_items, buyer, fulfillment } }
+→ checkout.status = 'ready_for_complete', totals.total = 32913  // $329.13`},
+ {t:'Verify merchant seal',tag:'pki',s:'platform MUST verify before showing the user',
+  d:`The agent reconstructs <code>JCS(checkout − ap2)</code>, resolves the merchant's JWK by <code>kid</code> from its profile, and verifies the detached JWS. Only a checkout with a valid seal reaches the user's screen. This repeats after <b>every</b> update (quantity, address) — and each change also re-issues the Cart Mandate.`,
+  c:`verify_detached_jws(checkout.ap2.merchant_authorization, JCS(checkout − ap2), jwk(kid))  // ✓`},
+ {t:'Mint instrument',tag:'ucp',s:'wallet → single-use network token',
+  d:`The Google-Pay-style handler executes against the wallet: <code>mint_instrument</code> returns a single-use network token + cryptogram bound to this checkout. The PAN stays in the wallet — agent and merchant only ever see <code>visa •••• 4291</code> and an opaque token.`,
+  c:`tools/call mint_instrument { method_id: 'pm_visa_4291', context: { checkout_id, amount: 32913 } }
+→ { token: 'tok_…', network: 'visa', last4: '4291', single_use: true, cryptogram: '…' }`},
+ {t:'Sign & complete',tag:'ap2',s:'biometric → 2 mandates → complete_checkout',
+  d:`On confirmation (“biometric”), the CP signs the <b>Payment Mandate</b> (amount + payee + checkout binding) and issues the <b>Checkout Mandate</b> as a real <b>SD-JWT+kb</b> (CP-issued, key-bound to the user device key, audience = this merchant, nonce = checkout id, with selective disclosure of the user id) embedding the full merchant-signed checkout. The agent submits both: the checkout mandate in <code>ap2</code>, the payment mandate inside the composite token, plus <code>dev.ucp.*</code> signals. Merchant verifies the whole chain (§9), then the PSP independently re-verifies, pulls credentials from the CP, authorizes and captures. The merchant <b>signs the response</b>; the completed checkout carries <code>order {id, permalink_url}</code>. (If the bank requires 3-D Secure, the checkout returns <code>requires_escalation</code> first — see §9.)`,
+  c:`tools/call complete_checkout { id, checkout: {
+  payment: { instruments: [{ handler_id, credential: { type: 'AP2_COMPOSITE',
+             token: { network_token, payment_mandate } } }] },
+  signals: { 'dev.ucp.buyer_ip': '…', 'dev.ucp.user_agent': '…' },
+  ap2: { checkout_mandate } } }`},
+ {t:'Order webhook',tag:'ucp',s:'merchant pushes signed Order object',
+  d:`When the order ships (auto after ~8s, or “Ship now” in the portal), the merchant pushes a full <b>Order object</b> (order.json: line items with quantity tracking, fulfillment expectations + events with carrier/tracking) to the webhook URL from the platform profile's order-capability config. The webhook is <b>signed</b>; the agent verifies it before telling the user “it shipped”.`,
+  c:`POST /webhooks/ucp   (Signature-Input, Signature, Content-Digest, UCP-Agent)
+{ order: { id, checkout_id, permalink_url, fulfillment: { events: [{ type:'shipped',
+  carrier:'UPS', tracking_number:'1Z…' }] }, totals, … } }`}
+];
+const stepsEl=document.getElementById('steps'), detailEl=document.getElementById('step-detail');
+STEPS.forEach((st,i)=>{
+  const el=document.createElement('div');el.className='step'+(i===0?' on':'');
+  el.innerHTML=`<div class="dot">${i+1}</div><div><b>${st.t}<span class="tag ${st.tag}">${st.tag.toUpperCase()}</span></b><span>${st.s}</span></div>`;
+  el.addEventListener('click',()=>{document.querySelectorAll('.step').forEach(s=>s.classList.remove('on'));el.classList.add('on');renderStep(i)});
+  stepsEl.appendChild(el);
+});
+function renderStep(i){
+  const st=STEPS[i];
+  detailEl.innerHTML=`<h3 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">Step ${i+1} · ${st.t}
+    <span class="tag ${st.tag}" style="font-size:10px">${st.tag.toUpperCase()}</span></h3>
+    <p style="font-size:14px">${st.d}</p>
+    <div class="codeblock"><button class="copy">copy</button><pre>${st.c.replace(/</g,'&lt;')}</pre></div>`;
+  detailEl.querySelector('.copy').addEventListener('click',e=>{
+    navigator.clipboard.writeText(st.c);e.target.textContent='copied ✓';setTimeout(()=>e.target.textContent='copy',1400);
+  });
+}
+renderStep(0);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", sequence: { mirrorActors: false, actorMargin: 36, messageFontSize: 13, noteFontSize: 12 } });
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Merchant Portal — UCP Businesses</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root { --bg:#f4f5f7; --card:#fff; --ink:#16181d; --muted:#6b7280; --line:#e5e7eb; --accent:#0d9488; --mono:'IBM Plex Mono',monospace; }
+*{box-sizing:border-box} body{margin:0;font-family:'Schibsted Grotesk',sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:18px 28px;background:var(--card);border-bottom:1px solid var(--line)}
+header .logo{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+header h1{font-size:17px;margin:0} header .sub{font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:8px;padding:14px 28px 0}
+.tab{padding:8px 16px;border-radius:10px 10px 0 0;border:1px solid var(--line);border-bottom:none;background:#eceef1;cursor:pointer;font-weight:600;font-size:13px;display:flex;gap:8px;align-items:center}
+.tab.active{background:var(--card)} .tab .dot{width:10px;height:10px;border-radius:3px}
+main{padding:0 28px 40px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:0 12px 12px 12px;padding:20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em}
+.mono{font-family:var(--mono);font-size:11.5px}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600}
+.badge.ok{background:#d1fae5;color:#065f46}.badge.warn{background:#fef3c7;color:#92400e}.badge.info{background:#e0e7ff;color:#3730a3}
+button.act{background:var(--accent);border:none;color:#fff;border-radius:8px;padding:6px 12px;font-weight:600;cursor:pointer;font-size:12px}
+button.act:disabled{opacity:.4;cursor:default}
+.log{font-family:var(--mono);font-size:11.5px;max-height:320px;overflow:auto;background:#0f172a;color:#cbd5e1;border-radius:10px;padding:12px}
+.log .k{color:#5eead4}.log .t{color:#64748b}
+details{margin:4px 0} details pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;overflow:auto;max-height:260px}
+.keyrow{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 4px}
+.stat{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:8px 16px;text-align:center}
+.stat b{display:block;font-size:17px;color:var(--accent)} .stat span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.cat-in{width:74px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">MP</div>
+  <div><h1>Merchant Portal</h1><div class="sub">Four UCP businesses · integrated Merchant Agent · JSON-RPC 2.0 + PKI signatures + AP2 mandates</div></div>
+</header>
+<div class="tabs" id="tabs"></div>
+<main><div class="panel" id="panel">Loading…</div></main>
+<script>
+let state=null, current=null;
+let lastSig='';
+async function load(){
+  const r=await fetch('/api/portal/state'); state=await r.json();
+  if(!current) current=state.merchants[0].id;
+  const sig=current+JSON.stringify(state.merchants.map(m=>[m.id,m.orders.length,m.checkouts.length,m.analytics,m.catalog.map(p=>[p.price,p.in_stock])]))+state.activity.length;
+  if(sig===lastSig) return; // don't wipe inputs while the operator is editing
+  lastSig=sig;
+  render();
+}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function render(){
+  const tabs=document.getElementById('tabs');
+  tabs.innerHTML=state.merchants.map(m=>`<div class="tab ${m.id===current?'active':''}" onclick="current='${m.id}';lastSig='';load()"><span class="dot" style="background:${m.color}"></span>${m.name}</div>`).join('');
+  const m=state.merchants.find(x=>x.id===current);
+  const acts=state.activity.filter(a=>a.merchant_id===m.id);
+  const an=m.analytics||{orders:0,revenue:0,aov:0,rails:{},declines:0,refunds:0};
+  document.getElementById('panel').innerHTML=`
+  <div class="keyrow">profile: ${m.profile_url} · signing key kid=<b>${m.kid}</b> (ES256/P-256, published as JWK)</div>
+  <div class="stats">
+    <div class="stat"><b>${an.orders}</b><span>orders</span></div>
+    <div class="stat"><b>$${(an.revenue/100).toFixed(2)}</b><span>revenue</span></div>
+    <div class="stat"><b>$${(an.aov/100).toFixed(2)}</b><span>avg order</span></div>
+    <div class="stat"><b>${an.rails.card_network||0} / ${an.rails.rtp||0}</b><span>card / RTP</span></div>
+    <div class="stat"><b>${an.declines}</b><span>declines</span></div>
+    <div class="stat"><b>${an.refunds}</b><span>refunds</span></div>
+  </div>
+  <div class="grid">
+    <div>
+      <h2>Catalog <span style="text-transform:none;font-weight:400">· editable (dynamic re-pricing)</span></h2>
+      <table><tr><th>Product</th><th>Price ($)</th><th>Stock</th><th></th></tr>
+      ${m.catalog.map(p=>`<tr><td><b>${esc(p.name)}</b><br><span class="mono">${p.id}</span><br><span style="font-size:11px;color:var(--muted)">${esc(p.ship)}</span></td>
+        <td><input class="cat-in" id="price-${m.id}-${p.id}" type="number" step="1" min="0" value="${(p.price/100).toFixed(0)}"/></td>
+        <td><input type="checkbox" id="stock-${m.id}-${p.id}" ${p.in_stock!==false?'checked':''}/></td>
+        <td><button class="act" onclick="saveCatalog('${m.id}','${p.id}')">Save</button></td></tr>`).join('')}
+      </table>
+      <h2>Checkout sessions</h2>
+      <table><tr><th>ID</th><th>Status</th><th>Items</th><th>Total</th><th>Signed</th></tr>
+      ${m.checkouts.map(c=>`<tr><td class="mono">${c.id.slice(0,16)}…</td><td><span class="badge ${c.status==='completed'?'ok':'info'}">${c.status}</span></td><td>${c.items.map(esc).join('<br>')}</td><td>${c.total!=null?'$'+(c.total/100).toFixed(2):'—'}</td><td>${c.signed?'<span class="badge ok">merchant_authorization ✓</span>':'—'}</td></tr>`).join('')||'<tr><td colspan=5 style="color:var(--muted)">none yet — run the Shopping Agent</td></tr>'}
+      </table>
+    </div>
+    <div>
+      <h2>Orders</h2>
+      ${m.orders.map(o=>`
+        <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <b class="mono">${o.id}</b> · <span class="badge ${o.status==='confirmed'?'info':'ok'}">${o.status}</span> · $${(o.total/100).toFixed(2)} ${o.currency}
+          <div style="font-size:12px;color:var(--muted);margin:4px 0">${o.items.map(i=>i.quantity+'× '+esc(i.title)).join(', ')} · ${esc(o.buyer?.email||'')}</div>
+          <div style="font-size:12px">payment: <span class="mono">${o.payment.psp_transaction_id}</span> (${o.payment.status}, •••• ${o.payment.last4})${o.tracking?` · ${o.tracking.carrier} <span class="mono">${o.tracking.number}</span>`:''} · <a href="${o.permalink_url}" target="_blank" class="mono">permalink</a></div>
+          <details><summary style="cursor:pointer;font-size:12px">AP2 evidence (dispute-ready)</summary>
+            <pre>${esc(JSON.stringify({cart_mandate_id:o.evidence.cart_mandate_id,payment_mandate_id:o.evidence.payment_mandate_id,verification:o.evidence.verification,checkout_mandate:o.evidence.checkout_mandate.slice(0,120)+'…',merchant_authorization:o.evidence.merchant_authorization.slice(0,100)+'…'},null,2))}</pre>
+          </details>
+          ${o.kya?`<div style="font-size:11px;margin:4px 0"><span class="badge ${/suspended|unregistered/.test(o.kya)?'warn':'info'}">KYA</span> buyer agent: ${esc(o.kya)}</div>`:''}
+          ${o.status==='confirmed'?`<button class="act" onclick="ship('${m.id}','${o.id}')">Ship now → signed webhook</button>
+            <button class="act" style="background:#b45309" onclick="ship('${m.id}','${o.id}',true)">Ship LATE (demo)</button>`:''}
+          ${o.status==='shipped'?`<button class="act" style="background:#16a34a" onclick="deliver('${m.id}','${o.id}')">Mark delivered</button>`:''}
+        </div>`).join('')||'<div style="color:var(--muted);font-size:13px">No orders yet.</div>'}
+      <h2>Activity (merchant agent)</h2>
+      <div class="log">${acts.map(a=>`<div><span class="t">${new Date(a.ts).toLocaleTimeString()}</span> <span class="k">${a.kind}</span> ${esc(a.summary)}</div>`).join('')||'—'}</div>
+    </div>
+  </div>`;
+}
+async function ship(mid,oid,late){await fetch('/api/portal/ship',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({merchant_id:mid,order_id:oid,late:!!late})});load()}
+async function deliver(mid,oid){await fetch('/api/portal/deliver',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({merchant_id:mid,order_id:oid})});load()}
+async function saveCatalog(mid,pid){
+  const price=Math.round(Number(document.getElementById('price-'+mid+'-'+pid).value||0)*100);
+  const in_stock=document.getElementById('stock-'+mid+'-'+pid).checked;
+  await fetch('/api/portal/catalog',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({merchant_id:mid,product_id:pid,price,in_stock})});
+  load();
+}
+load(); setInterval(load,2500);
+</script>
+</body>
+</html>

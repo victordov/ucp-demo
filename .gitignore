@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# env / secrets
+.env
+.env.*
+
+# logs & runtime
+*.log
+logs/
+nohup.out
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# python bytecode (conformance suite)
+__pycache__/
+*.pyc

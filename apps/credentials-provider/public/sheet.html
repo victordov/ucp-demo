@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Walletly — Secure Payment</title>
+<style>
+  /* The sheet card IS this document: the agent embeds it in a sandboxed
+     cross-origin iframe (Google-Pay-style isolation). */
+  :root {
+    --ink: oklch(0.24 0.015 270); --ink-2: oklch(0.38 0.012 270);
+    --muted: oklch(0.52 0.012 270); --faint: oklch(0.68 0.01 270);
+    --border: oklch(0.9 0.006 270); --border-2: oklch(0.94 0.005 270);
+    --surface-2: oklch(0.97 0.004 270); --accent: oklch(0.55 0.18 264);
+    --success: oklch(0.55 0.14 155);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: #fff; }
+  body { font: 14px/1.45 "Schibsted Grotesk", system-ui, sans-serif; color: var(--ink); overflow: hidden; }
+  .head { display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--border-2); }
+  .head .origin { font-size: 11px; color: var(--faint); margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; }
+  .spacer { flex: 1; }
+  .x { width: 30px; height: 30px; border-radius: 8px; border: none; background: var(--surface-2); color: var(--muted); display: grid; place-items: center; cursor: pointer; font-size: 14px; }
+  .x:hover { background: var(--border); color: var(--ink); }
+  .body { padding: 8px 22px 22px; }
+  .row { display: flex; align-items: center; gap: 13px; padding: 14px 0; border-bottom: 1px solid var(--border-2); }
+  .row.click { cursor: pointer; }
+  .brand { min-width: 48px; height: 32px; padding: 0 8px; border-radius: 7px; background: var(--surface-2); display: grid; place-items: center; font-weight: 800; font-size: 11px; letter-spacing: .04em; color: var(--ink-2); }
+  .brand.rtp { background: #0d9488; color: #fff; }
+  .ic { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; color: var(--ink-2); }
+  .lbl { flex: 1; min-width: 0; }
+  .lbl .t { font-weight: 600; font-size: 13.5px; }
+  .lbl .s { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .chev { color: var(--faint); }
+  .total { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 14px; }
+  .total .t { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .total .v { font-size: 22px; font-weight: 700; }
+  .confirm { width: 100%; height: 46px; border: none; border-radius: 12px; background: var(--ink); color: #fff; font: 600 14.5px "Schibsted Grotesk", system-ui, sans-serif; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .confirm:hover { opacity: .92; }
+  .skip { width: 100%; margin-top: 10px; height: 38px; border: none; background: none; color: var(--muted); font: 500 12.5px "Schibsted Grotesk", system-ui, sans-serif; cursor: pointer; }
+  .skip:hover { color: var(--ink); }
+  .note { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 12px; text-align: center; }
+  .bio { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 26px 0 18px; }
+  .ring { width: 64px; height: 64px; border-radius: 50%; background: oklch(0.55 0.18 264 / 0.1); display: grid; place-items: center; color: var(--accent); margin-bottom: 14px; font-size: 28px; }
+  .ring.err { background: rgba(220,38,38,.1); color: #dc2626; }
+  .ring.ok { background: oklch(0.55 0.14 155 / 0.12); color: var(--success); font-weight: 700; }
+  .bio .h { font-size: 15px; font-weight: 600; }
+  .bio .d { font-size: 12.5px; color: var(--muted); margin-top: 5px; max-width: 280px; }
+  .mtitle { font-size: 14px; font-weight: 700; margin: 8px 0 10px; }
+  .method { border-radius: 12px; padding-left: 6px; padding-right: 6px; }
+  .method.sel { border: 1.5px solid var(--accent); }
+  .check { color: var(--accent); font-weight: 700; }
+  .gpay b { font-weight: 600; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js"></script>
+<script src="/sheet-config.js"></script>
+<script src="/passkey-client.js"></script>
+<script>
+(() => {
+  "use strict";
+  // The agent origin is injected server-side (sheet-config.js). Every message,
+  // in BOTH directions, is pinned to exactly this origin.
+  const AGENT = window.AGENT_ORIGIN;
+  if (!AGENT) { document.body.textContent = "Misconfigured: no agent origin."; return; }
+  if (window.top === window) { document.body.textContent = "This page must be embedded by the shopping agent."; }
+
+  const post = (msg) => window.parent.postMessage(msg, AGENT);
+  const money = (n) => "$" + Number(n).toFixed(2);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const root = document.getElementById("root");
+
+  const SVG = {
+    lock: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+    pin: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+    cart: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 12h10.2L20 8H6"/></svg>',
+    finger: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 11a2 2 0 0 1 2 2c0 2.5-.5 5-1.5 7"/><path d="M8.5 13a3.5 3.5 0 0 1 7 0c0 1.5-.2 3.5-.8 5.5"/><path d="M5.5 15.5C5.2 14.7 5 13.9 5 13a7 7 0 0 1 12.3-4.6"/><path d="M19 13c0 1-.1 2-.3 3"/></svg>',
+    chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>',
+    shield: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/></svg>',
+    refresh: '<svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>',
+  };
+  const gpayMark = '<span class="gpay" style="font-size:19px"><b><span style="color:#4285F4">G</span><span style="color:#EA4335">o</span><span style="color:#FBBC05">o</span><span style="color:#4285F4">g</span><span style="color:#34A853">l</span><span style="color:#EA4335">e</span></b><span style="font-weight:600;margin-left:5px;color:#5F6368">Pay</span></span>';
+  const rtpMark = '<span style="display:inline-flex;align-items:center;gap:5px;font-weight:700"><span style="width:18px;height:18px;border-radius:5px;background:#0d9488;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">⚡</span>RTP</span>';
+
+  // ---- state ----
+  let D = null;          // { total, address, merchant, method, methods, passkey }
+  let stage = "loading"; // loading | review | method | enroll | auth | success | error
+  let authMsg = "", errMsg = "", switching = false;
+
+  function setStage(s) { stage = s; render(); }
+
+  function render() {
+    if (!D) { root.innerHTML = '<div class="body" style="padding:40px 22px;text-align:center;color:var(--muted)">Loading…</div>'; resize(); return; }
+    const isRtp = D.method && D.method.rail === "rtp";
+    const card = D.method || { network: "card", display: "Card", last4: "" };
+    const pkOn = D.passkey && D.passkey.enabled;
+    const enrolled = pkOn && D.passkey.enrolled;
+    const closable = stage === "review" || stage === "method" || stage === "enroll" || stage === "error";
+
+    const head =
+      '<div class="head">' + (isRtp ? rtpMark + '<span style="font-size:12px;color:var(--muted)">instant bank transfer · PayStream</span>' : gpayMark) +
+      '<span class="origin">' + SVG.lock + ' ' + esc(location.host) + '</span><div class="spacer"></div>' +
+      (closable ? '<button class="x" id="close">✕</button>' : "") + "</div>";
+
+    let body = "";
+    if (stage === "review") {
+      const pickable = D.methods && D.methods.length > 1;
+      body =
+        '<div class="row' + (pickable ? " click" : "") + '" id="pick">' +
+          '<div class="brand' + (isRtp ? " rtp" : "") + '">' + esc(isRtp ? "RTP" : (card.network || "card").toUpperCase().slice(0, 6)) + "</div>" +
+          '<div class="lbl"><div class="t">' + esc(card.display) + '</div><div class="s">' + (isRtp ? "checking ••" : "••••") + " " + esc(card.last4) + (isRtp ? " · settles instantly" : pickable ? " · tap to change" : "") + "</div></div>" +
+          (pickable ? '<span class="chev">' + SVG.chev + "</span>" : "") + "</div>" +
+        '<div class="row"><div class="ic">' + SVG.pin + '</div><div class="lbl"><div class="t">' + esc(D.address.name) + '</div><div class="s">' + esc(D.address.line1) + ", " + esc(D.address.city) + " " + esc(D.address.state) + "</div></div></div>" +
+        '<div class="row"><div class="ic">' + SVG.cart + '</div><div class="lbl"><div class="t">' + esc(D.merchant.name) + '</div><div class="s">' + esc(D.merchant.domain) + "</div></div></div>" +
+        '<div class="total"><span class="t">Total</span><span class="v">' + money(D.total) + "</span></div>" +
+        '<button class="confirm" id="confirm">' + SVG.lock + " Confirm · Pay " + money(D.total) + "</button>" +
+        '<div class="note">' + SVG.shield + " " + (enrolled ? "Touch ID confirms an AP2 Payment Mandate" : pkOn ? "Authorizes an AP2 Payment Mandate · set up Touch ID for real verification" : "Authorizes an AP2 Payment Mandate (simulated)") + "</div>";
+    } else if (stage === "method") {
+      body = '<div class="mtitle">Choose how to pay</div>' +
+        (D.methods || []).map((m) =>
+          '<div class="row click method' + (D.method && m.id === D.method.id ? " sel" : "") + '" data-mid="' + esc(m.id) + '" style="opacity:' + (switching ? ".5" : "1") + '">' +
+            '<div class="brand' + (m.rail === "rtp" ? " rtp" : "") + '">' + esc(m.rail === "rtp" ? "RTP" : (m.network || "").toUpperCase().slice(0, 6)) + "</div>" +
+            '<div class="lbl"><div class="t">' + esc(m.display) + '</div><div class="s">' + (m.rail === "rtp" ? "instant bank transfer" : "card network") +
+              (m.behavior === "challenge" ? " · triggers 3-D Secure" : m.behavior === "decline" ? " · always declines (test)" : "") + (m.default ? " · default" : "") + "</div></div>" +
+            (D.method && m.id === D.method.id ? '<span class="check">✓</span>' : "") + "</div>"
+        ).join("") +
+        '<button class="skip" id="back">← Back</button>';
+    } else if (stage === "enroll") {
+      body = '<div class="bio"><div class="ring">' + SVG.finger + '</div><div class="h">Verify this purchase with Touch ID</div>' +
+        '<div class="d">Set up a passkey so your fingerprint cryptographically authorizes these exact terms (' + money(D.total) + " to " + esc(D.merchant.name) + ").</div></div>" +
+        '<button class="confirm" id="enroll">' + SVG.finger.replace('width="28" height="28"', 'width="16" height="16"') + " Set up Touch ID &amp; pay</button>" +
+        '<button class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
+    } else if (stage === "error") {
+      body = '<div class="bio"><div class="ring err">✕</div><div class="h">Couldn’t verify</div><div class="d">' + esc(errMsg) + "</div></div>" +
+        '<button class="confirm" id="retry">' + SVG.refresh + " Try again</button>" +
+        '<button class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
+    } else if (stage === "auth") {
+      body = '<div class="bio"><div class="ring">' + SVG.finger + '</div><div class="h">' + esc(authMsg || "Verify with biometric") + '</div>' +
+        '<div class="d">Authorizing ' + money(D.total) + " to " + esc(D.merchant.name) + "…</div></div>";
+    } else if (stage === "success") {
+      // Like the native Apple Pay / Google Pay sheets: a brief ✓ confirmation,
+      // then the parent dismisses the sheet — it is no longer interactive.
+      body = '<div class="bio"><div class="ring ok">✓</div><div class="h">Payment confirmed</div>' +
+        '<div class="d">' + money(D.total) + " paid to " + esc(D.merchant.name) + ".</div></div>";
+    }
+
+    root.innerHTML = head + '<div class="body">' + body + "</div>";
+
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+    on("close", () => post({ type: "wallet.close" }));
+    on("confirm", confirm);
+    on("back", () => setStage("review"));
+    on("enroll", enrollThenPay);
+    on("retry", () => setStage("review"));
+    on("simulate", () => { authMsg = "Authorizing…"; setStage("auth"); setTimeout(() => post({ type: "wallet.confirm", assertion: null }), 1200); });
+    if (stage === "review" && D.methods && D.methods.length > 1) on("pick", () => setStage("method"));
+    if (stage === "method") root.querySelectorAll("[data-mid]").forEach((el) => {
+      el.onclick = () => { if (switching) return; switching = true; render(); post({ type: "wallet.change_method", id: el.getAttribute("data-mid") }); };
+    });
+    resize();
+  }
+
+  function resize() { post({ type: "wallet.resize", height: document.body.scrollHeight }); }
+
+  // ---- ceremonies (run on the WALLET origin — the whole point of the iframe) ----
+  async function runAuthCeremony() {
+    authMsg = "Touch ID…"; setStage("auth");
+    try {
+      const { assertion, method } = await window.Passkey.auth({
+        options: D.passkey.auth_options.options,
+        payment: D.passkey.auth_options.payment,
+        amount: Number(D.total).toFixed(2),
+        payee: D.merchant.name,
+      });
+      authMsg = method === "spc" ? "Confirmed via Secure Payment Confirmation" : "Verified with Touch ID"; render();
+      post({ type: "wallet.confirm", assertion, method });
+    } catch (e) { errMsg = e.message || "Verification was cancelled."; setStage("error"); }
+  }
+
+  function confirm() {
+    errMsg = "";
+    const pkOn = D.passkey && D.passkey.enabled;
+    const enrolled = pkOn && D.passkey.enrolled;
+    if (!pkOn) { authMsg = "Authorizing…"; setStage("auth"); setTimeout(() => post({ type: "wallet.confirm", assertion: null }), 1500); return; }
+    if (!enrolled) { setStage("enroll"); return; }
+    runAuthCeremony();
+  }
+
+  function enrollThenPay() {
+    authMsg = "Setting up Touch ID…"; setStage("auth");
+    post({ type: "wallet.enroll" }); // parent fetches registration options via the agent backend
+  }
+
+  // ---- messages from the parent (origin-pinned) ----
+  window.addEventListener("message", async (e) => {
+    if (e.origin !== AGENT) return;
+    const msg = e.data || {};
+    if (msg.type === "wallet.init") { D = msg.data; setStage("review"); }
+    else if (msg.type === "wallet.update") {
+      D = Object.assign({}, D, msg.data || {});
+      switching = false;
+      if (msg.continue === "auth") runAuthCeremony(); else setStage("review");
+    }
+    else if (msg.type === "wallet.enroll_options") {
+      try {
+        const response = await window.Passkey.register(msg.options); // WebAuthn create() on wallet origin
+        authMsg = "Finishing setup…"; render();
+        post({ type: "wallet.enrolled", response, challenge: msg.options.challenge });
+      } catch (err) { errMsg = err.message || "Enrollment failed."; setStage("error"); }
+    }
+    else if (msg.type === "wallet.success") { setStage("success"); }
+    else if (msg.type === "wallet.error") { errMsg = msg.message || "Something went wrong."; switching = false; setStage("error"); }
+  });
+
+  render();
+  post({ type: "wallet.ready" });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    actor User as User (Touch ID)
+    participant UI as Browser UI<br/>(passkey.js — SPC/WebAuthn)
+    participant SA as Shopping Agent<br/>(orchestrator)
+    participant M as Merchant Portal
+    participant CP as Credentials Provider<br/>(Walletly)
+    participant PSP as Payment Provider
+
+    Note over M,SA: Checkout created & priced
+    M->>M: signMerchantAuthorization:<br/>detached JWS over JCS(checkout − ap2)<br/>(merchant key)
+    M-->>SA: checkout + ap2.merchant_authorization
+
+    Note over SA,CP: Prepare user verification (passkey enrolled)
+    SA->>SA: uv_challenge = b64u(SHA-256(JCS(checkout − ap2)))<br/>= hash of the EXACT merchant-signed terms
+    SA->>CP: passkey_auth_options(uv_challenge, checkout_id)
+    CP->>CP: record pending challenge
+    CP-->>SA: WebAuthn options<br/>(challenge=uv_challenge, allowCredentials,<br/>userVerification: required) + SPC payment display
+
+    Note over User,UI: ★ What the user signs with the passkey
+    SA->>UI: show approval (amount, merchant, instrument)
+    UI->>User: SPC native sheet (Chrome) or WebAuthn prompt
+    User->>UI: Touch ID (biometric, UV=1)
+    UI->>UI: authenticator signs:<br/>authenticatorData ‖ SHA-256(clientDataJSON)<br/>clientDataJSON.challenge = checkout-terms hash
+    UI-->>SA: assertion {clientDataJSON, authenticatorData,<br/>signature, userHandle}
+
+    Note over SA,CP: ★ Who validates the passkey: the Credentials Provider
+    SA->>CP: sign_mandate(kind=CheckoutMandate,<br/>payload={checkout, aud=merchant profile,<br/>nonce=checkout id}, webauthn=assertion)
+    CP->>CP: verifyAuthenticationResponse:<br/>• signature vs enrolled credential public key<br/>• expectedChallenge = checkoutUvChallenge(checkout)<br/>• expectedOrigin + expectedRPID<br/>• UV flag = 1 (user verified)
+    alt assertion invalid / missing
+        CP-->>SA: 401 user_verification_failed — NO mandate issued
+    else assertion valid
+        CP->>CP: issue SD-JWT+kb CheckoutMandate:<br/>• issuer sig = CP service key<br/>• holder = USER DEVICE KEY (cnf)<br/>• embeds full checkout incl. merchant_authorization
+        CP->>CP: device key signs KB-JWT<br/>(aud=merchant profile, nonce=checkout id)<br/>+ selective disclosure (reveal sub, withhold email)
+        CP-->>SA: checkout_mandate (dc+sd-jwt~kb)<br/>+ passkey_evidence {type, credential_id, uv:true, challenge}
+    end
+
+    Note over SA,CP: Device key also signs the PaymentMandate
+    SA->>CP: sign_mandate(kind=PaymentMandate)<br/>(spend-policy check at signing surface)
+    CP-->>SA: payment_mandate = compact JWS<br/>signed by user device key
+
+    Note over SA,M: Complete checkout
+    SA->>M: complete_checkout(ap2.checkout_mandate,<br/>composite token {network_token, payment_mandate})
+    M->>CP: fetch CP profile (JWKs)
+    M->>M: verify CheckoutMandate:<br/>• issuer sig (CP service key)<br/>• KB sig with cnf = user device key<br/>• aud == this merchant, nonce == checkout id<br/>• embedded checkout == live checkout<br/>• own merchant_authorization intact • expiry
+
+    Note over M,PSP: Authorize payment
+    M->>PSP: authorize_payment(composite token)
+    PSP->>PSP: verify merchant HTTP signature (RFC 9421)
+    PSP->>CP: fetch CP profile (JWKs)
+    PSP->>PSP: verify PaymentMandate JWS vs<br/>USER DEVICE KEY • scope: amount,<br/>payee, checkout binding, expiry
+    PSP-->>M: authorized (txn id)
+    M-->>SA: order created — mandates archived<br/>as dispute evidence

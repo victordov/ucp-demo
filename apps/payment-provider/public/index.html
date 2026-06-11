@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PayStream — Payment Provider</title>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root { --bg:#f5f7f6; --card:#fff; --ink:#16181d; --muted:#6b7280; --line:#e5e7eb; --accent:#ca8a04; --mono:'IBM Plex Mono',monospace; }
+*{box-sizing:border-box} body{margin:0;font-family:'Schibsted Grotesk',sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:12px;padding:18px 28px;background:var(--card);border-bottom:1px solid var(--line)}
+header .logo{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+header h1{font-size:17px;margin:0} header .sub{font-size:12px;color:var(--muted)}
+main{padding:22px 28px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+.txn{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600}
+.badge.ok{background:#d1fae5;color:#065f46}.badge.warn{background:#fef3c7;color:#92400e}.badge.agent{background:#e0e7ff;color:#3730a3}
+.mono{font-family:var(--mono);font-size:11.5px}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin-top:8px}
+.vrow{font-size:11.5px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:5px 9px}
+.vrow b{color:#166534}
+.log{font-family:var(--mono);font-size:11.5px;max-height:300px;overflow:auto;background:#1c1917;color:#e7e5e4;border-radius:10px;padding:12px}
+.log .k{color:#fcd34d}.log .t{color:#78716c}
+.keyrow{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:6px}
+.adm{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:5px 12px;font-weight:600;font-size:11.5px;cursor:pointer;font-family:inherit}
+.adm.gray{background:#6b7280}.adm.red{background:#dc2626}.adm.green{background:#16a34a}
+.charts{display:flex;gap:26px;flex-wrap:wrap}
+.chart{min-width:230px}
+.chart h3{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px}
+.bar{display:grid;grid-template-columns:110px 1fr 38px;gap:8px;align-items:center;font-size:11.5px;margin:4px 0}
+.bar .tr{height:12px;background:#f1f5f9;border-radius:99px;overflow:hidden}
+.bar .fl{height:100%;border-radius:99px}
+details.txd{margin-top:8px} details.txd summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--accent)}
+details.txd pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:10.5px;overflow:auto;max-height:220px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">P$</div>
+  <div><h1>PayStream — Payment Provider (PSP)</h1><div class="sub">AP2 Merchant Payment Processor · verifies PaymentMandates · pulls credentials from the CP · authorize / capture</div></div>
+</header>
+<main>
+  <div class="card"><div class="keyrow" id="key"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+      <span style="font-size:12px;color:var(--muted)">velocity limit (auth/60s/agent):</span>
+      <input id="vel-in" type="number" min="1" style="width:70px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;font-family:inherit"/>
+      <button class="adm" onclick="setVelocity()">Set</button>
+      <span id="vel-msg" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+  <div class="card"><h2>Traffic</h2><div class="charts" id="charts">—</div></div>
+  <div class="card"><h2>Agent registry · Know Your Agent + reputation</h2><div id="registry">—</div></div>
+  <div class="card"><h2>Transactions</h2><div id="txns">No transactions yet — complete a checkout in the Shopping Agent.</div></div>
+  <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
+</main>
+<script>
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function decodeJwt(jws){
+  try{
+    const [h,p]=jws.split('.');
+    const dec=x=>JSON.parse(atob(x.replace(/-/g,'+').replace(/_/g,'/')));
+    return 'header  '+JSON.stringify(dec(h))+'\n\n'+JSON.stringify(dec(p),null,2);
+  }catch(e){return 'decode failed: '+e.message}
+}
+async function setAgent(profile_url,status){
+  await fetch('/api/psp/registry',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({profile_url,status})});load(true);
+}
+async function setVelocity(){
+  const limit=Number(document.getElementById('vel-in').value||20);
+  await fetch('/api/psp/velocity',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({limit})});
+  document.getElementById('vel-msg').textContent='set to '+limit+'/60s · '+new Date().toLocaleTimeString(); load(true);
+}
+async function refundTxn(id){
+  if(!confirm('Refund the remaining captured amount for '+id+'?'))return;
+  const r=await fetch('/api/psp/refund',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({transaction_id:id})});
+  if(!r.ok){alert((await r.json()).error)} load(true);
+}
+function bars(title,counts,colors){
+  const total=Object.values(counts).reduce((a,b)=>a+b,0)||1;
+  return `<div class="chart"><h3>${title}</h3>`+Object.entries(counts).map(([k,v],i)=>
+    `<div class="bar"><span>${esc(k)}</span><span class="tr"><span class="fl" style="width:${Math.round(100*v/total)}%;background:${colors[i%colors.length]}"></span></span><b>${v}</b></div>`).join('')+'</div>';
+}
+let lastSig='';
+async function load(force){
+  const r=await fetch('/api/psp/state'); const s=await r.json();
+  const sig=JSON.stringify([s.transactions.length,s.transactions[0]&&s.transactions[0].status,s.registry,s.velocity,s.activity.length]);
+  if(!force&&sig===lastSig) return; lastSig=sig;
+  const vin=document.getElementById('vel-in'); if(document.activeElement!==vin) vin.value=s.velocity?.limit??20;
+  /* charts */
+  const rails={}, statuses={}, merchants={};
+  for(const t of s.transactions){ rails[t.rail]=(rails[t.rail]||0)+1; statuses[t.status]=(statuses[t.status]||0)+1; merchants[t.merchant_id]=(merchants[t.merchant_id]||0)+1; }
+  document.getElementById('charts').innerHTML = s.transactions.length
+    ? bars('by rail',rails,['#0d9488','#4f46e5'])+bars('by status',statuses,['#16a34a','#f59e0b','#dc2626','#6366f1','#0d9488'])+bars('by merchant',merchants,['#4f46e5','#0ea5a4','#7c3aed','#ea580c'])
+    : '—';
+  document.getElementById('key').innerHTML=`signing key kid=<b>${s.key.kid}</b> (ES256/P-256) · published at /.well-known/ucp · verifies user-device-key mandates via the Credentials Provider's JWKs · velocity limit <b>${s.velocity?.limit}</b>/${s.velocity?.window_seconds}s per agent`;
+  document.getElementById('registry').innerHTML=(s.registry||[]).map(r=>`
+    <div class="txn">
+      <b>${esc(r.name)}</b>
+      <span class="badge ${r.status==='active'?'ok':'warn'}">${r.status}</span>
+      <span class="badge agent">KYA: ${r.kya_level}</span>
+      <span style="float:right"><b>reputation ${r.reputation}/100</b>
+        ${r.status==='active'
+          ?`<button class="adm red" style="margin-left:10px" onclick="setAgent('${esc(r.profile_url)}','suspended')">Suspend</button>`
+          :`<button class="adm green" style="margin-left:10px" onclick="setAgent('${esc(r.profile_url)}','active')">Restore</button>`}
+      </span>
+      <div style="font-size:12px;color:var(--muted);margin:5px 0">
+        <span class="mono">${esc(r.profile_url)}</span> · owner ${esc(r.owner)}
+      </div>
+      <div class="vgrid">${(r.events||[]).slice(0,6).map(e=>`<div class="vrow"><b>${esc(e.kind)}</b> ${e.delta>0?'+':''}${e.delta} · ${esc(e.note)}</div>`).join('')}</div>
+    </div>`).join('')||'—';
+  document.getElementById('txns').innerHTML=s.transactions.map(t=>`
+    <div class="txn">
+      <b class="mono">${t.transaction_id}</b>
+      <span class="badge ${t.status==='captured'?'ok':'warn'}">${t.status}</span>
+      <span class="badge agent">AI agent · ${t.agent_presence.modality}</span>
+      <span class="badge ${t.rail==='rtp'?'ok':'agent'}">${t.rail==='rtp'?'RTP · instant':'card network'}</span>
+      <b style="float:right">$${(t.amount/100).toFixed(2)} ${t.currency}</b>
+      <div style="font-size:12px;color:var(--muted);margin:5px 0">
+        merchant <b>${t.merchant_id}</b> · checkout <span class="mono">${t.checkout_id}</span> · ${t.network} •••• ${t.last4} · mandate <span class="mono">${t.payment_mandate_id}</span>
+      </div>
+      <div class="vgrid">${Object.entries(t.mandate_verification).map(([k,v])=>`<div class="vrow"><b>${k}</b> · ${esc(v)}</div>`).join('')}</div>
+      <details class="txd"><summary>Drill in · decoded mandate · signals · refunds</summary>
+        ${t.agent?`<div style="font-size:11.5px;margin:6px 0">agent: <span class="mono">${esc(t.agent)}</span></div>`:''}
+        ${t.mandate_jws?`<div style="font-size:11px;color:var(--muted);margin-top:6px"><b>PaymentMandate · decoded</b></div><pre>${esc(decodeJwt(t.mandate_jws))}</pre>`:''}
+        ${t.signals?`<div style="font-size:11px;color:var(--muted)"><b>signals</b></div><pre>${esc(JSON.stringify(t.signals,null,2))}</pre>`:''}
+        ${t.refunds&&t.refunds.length?`<div style="font-size:11px;color:var(--muted)"><b>refunds</b></div><pre>${esc(JSON.stringify(t.refunds,null,2))}</pre>`:''}
+        ${(t.status==='captured'||t.status==='partially_refunded')?`<button class="adm" onclick="refundTxn('${t.transaction_id}')">Refund remaining (issuer credit)</button>`:''}
+      </details>
+    </div>`).join('')||'No transactions yet — complete a checkout in the Shopping Agent.';
+  document.getElementById('log').innerHTML=s.activity.map(a=>`<div><span class="t">${new Date(a.ts).toLocaleTimeString()}</span> <span class="k">${a.kind}</span> ${esc(a.summary)}</div>`).join('')||'—';
+}
+load(); setInterval(load,2500);
+</script>
+</body>
+</html>

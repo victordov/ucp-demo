@@ -1,0 +1,12 @@
+{
+  "currency": "USD",
+  "items": [
+    { "id": "item_1", "price": 1000 }
+  ],
+  "payment_instruments": [
+    { "id": "instr_1", "type": "card" }
+  ],
+  "addresses": [
+    { "id": "addr_1", "address_country": "US" }
+  ]
+}

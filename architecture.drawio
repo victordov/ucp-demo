@@ -1,0 +1,261 @@
+<mxfile host="app.diagrams.net" agent="cowork" version="24.0.0">
+  <diagram id="ucp-ap2-arch" name="UCP + AP2 Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== Title ===== -->
+        <mxCell id="title" value="UCP + AP2 Reference Suite — Architecture (Agentic Commerce, JSON-RPC 2.0 over MCP, PKI signatures, no DID)" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#1A1A1A;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1500" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Actor ===== -->
+        <mxCell id="user" value="User (Alex)&#10;buyer / device biometric" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="290" y="70" width="50" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== External: LLM ===== -->
+        <mxCell id="llm" value="LLM Providers&#10;(OpenAI / Anthropic)&#10;NLU + agentic loop&#10;deterministic fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="160" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== External: OTel ===== -->
+        <mxCell id="otel" value="OTel Collector (optional)&#10;OTLP/HTTP spans&#10;Tempo / Jaeger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="280" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ===== External: Dev gateway ===== -->
+        <mxCell id="gateway" value="Dev Gateway (:4099)&#10;ngrok / Localtunnel&#10;path-prefix reverse proxy&#10;preserves HTTP signatures" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="400" width="240" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- Shopping Agent container -->
+        <!-- ============================================================ -->
+        <mxCell id="agent" value="Shopping Agent  (:4100)  —  UCP Platform / AP2 Shopping Agent  &quot;Shoppy&quot;" style="swimlane;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;fontStyle=1;startSize=26;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="580" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ui" value="Shoppy UI (React)&#10;chat · trace inspector · checkout sheet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="40" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="a_orch" value="Orchestrator&#10;UCP/AP2 flow driver" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="agent">
+          <mxGeometry x="205" y="40" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="a_loop" value="Agent Loop + NLU&#10;LLM tool-calling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="agent">
+          <mxGeometry x="380" y="40" width="175" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="a_audit" value="Audit hash-chain&#10;seq / prev_hash / hash · evidence bundle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="115" width="225" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a_ep" value="Endpoints:  /.well-known/ucp · /webhooks/ucp (order) · /api/trace · /oauth/callback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF2FF;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="180" width="535" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a_caps" value="UCP capabilities consumed: catalog.search/lookup · cart · checkout · order · identity_linking" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;fontColor=#33475B;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="230" width="535" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- Merchant Portal container -->
+        <!-- ============================================================ -->
+        <mxCell id="merchant" value="Merchant Portal  (:4101)  —  4 UCP Businesses (multi-tenant) + Merchant Agent" style="swimlane;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;fontStyle=1;startSize=26;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="700" y="180" width="560" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="m_ui" value="Portal Dashboard UI&#10;per-tenant analytics · catalog editor · ship/deliver" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82B366;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="20" y="40" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="m_agent" value="Merchant Agent&#10;mandate-chain verifier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82B366;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="205" y="40" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="m_mcp" value="Per-tenant MCP&#10;/m/:mid/mcp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="380" y="40" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="m_caps" value="Capabilities: search_catalog · get_product · create_cart · complete_checkout · order" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7E9;strokeColor=#82B366;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="20" y="115" width="350" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="m_oauth" value="OAuth Server&#10;RFC 8414 · identity_linking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82B366;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="385" y="115" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="m_data" value="Catalog + Inventory (4 tenants) · Orders · KYA badge per order · .well-known/ucp profile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF7E9;strokeColor=#82B366;fontSize=10;" vertex="1" parent="merchant">
+          <mxGeometry x="20" y="180" width="515" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- Credentials Provider container -->
+        <!-- ============================================================ -->
+        <mxCell id="creds" value="Credentials Provider  (:4102)  —  AP2 Credentials Provider  &quot;Walletly&quot;" style="swimlane;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=12;fontStyle=1;startSize=26;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="580" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="c_ui" value="Walletly UI&#10;agent permissions · approval inbox · passkeys" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="20" y="40" width="200" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="c_mcp" value="MCP  /mcp&#10;tools/call (JSON-RPC 2.0)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="380" y="40" width="175" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="c_wallet" value="Wallet + Tokenization&#10;mint_instrument&#10;(policy bound into token)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="20" y="115" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="c_pk" value="WebAuthn / Passkeys&#10;@simplewebauthn&#10;device user-verification" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="205" y="115" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="c_policy" value="Spend Policy + Consent&#10;autonomy · per-tx cap&#10;budget · allowlist · rail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="385" y="115" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="c_sign" value="sign_mandate (Intent / Cart / Payment) · SD-JWT+kb Checkout Mandate (issuer-signed, key-bound)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2E0;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="20" y="190" width="535" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c_key" value="User Device Key (mandate signing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="20" y="245" width="250" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c_appr" value="Approval Inbox (human-in-the-loop) · release_credentials · resolve_challenge (3DS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+          <mxGeometry x="285" y="245" width="270" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- Payment Provider container -->
+        <!-- ============================================================ -->
+        <mxCell id="psp" value="Payment Provider  (:4103)  —  PSP / AP2 Merchant Payment Processor  &quot;PayStream&quot;" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=12;fontStyle=1;startSize=26;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="700" y="540" width="560" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="p_ui" value="PayStream UI&#10;velocity controls · suspend/restore · refunds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="20" y="40" width="200" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_mcp" value="MCP  /mcp&#10;tools/call (JSON-RPC 2.0)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D0CE;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="360" y="40" width="175" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_auth" value="authorize_payment · capture_payment · refund_payment&#10;multi-rail: Google Pay · RTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE8E7;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="20" y="115" width="270" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_verify" value="Mandate Verification&#10;intent_mandate re-check&#10;(defense in depth)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="305" y="115" width="230" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_kya" value="KYA Agent Registry + Reputation&#10;lookup_agent · status · score" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="20" y="190" width="270" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_vel" value="Velocity Limiter&#10;rolling 60s window&#10;velocity_exceeded" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="305" y="190" width="230" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p_prof" value="3DS challenge issuance · get_payment · .well-known/ucp profile (payment_handlers)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE8E7;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+          <mxGeometry x="20" y="260" width="515" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- Shared common library -->
+        <!-- ============================================================ -->
+        <mxCell id="common" value="packages/common  —  shared UCP/AP2 protocol library" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=12;fontStyle=1;startSize=26;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="40" y="910" width="1220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_jsonrpc" value="jsonrpc.ts&#10;JSON-RPC 2.0 / MCP transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="20" y="40" width="175" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_httpsig" value="httpsig.ts&#10;RFC 9421 HTTP Message&#10;Signatures (+9530 digest)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="210" y="40" width="175" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_crypto" value="crypto.ts&#10;PKI signing keys&#10;(no DID)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="400" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_sdjwt" value="sdjwt.ts&#10;SD-JWT+kb verifiable&#10;credential" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="565" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_ap2" value="ap2.ts&#10;mandate model +&#10;merchant authorization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="730" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_jcs" value="jcs.ts&#10;RFC 8785 JSON&#10;canonicalization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="905" y="40" width="145" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lib_otel" value="otel.ts · config.ts · types.ts&#10;OTLP export · ports/URLs · types" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="common">
+          <mxGeometry x="1065" y="40" width="135" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- EDGES -->
+        <!-- ============================================================ -->
+        <!-- user -> shoppy ui -->
+        <mxCell id="e_user_ui" value="browser / biometric" style="endArrow=classic;html=1;fontSize=10;strokeColor=#333333;" edge="1" parent="1" source="user" target="agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- agent -> LLM -->
+        <mxCell id="e_agent_llm" value="HTTPS · intent + tool calls" style="endArrow=classic;startArrow=classic;html=1;fontSize=10;strokeColor=#9673A6;dashed=1;" edge="1" parent="1" source="agent" target="llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- agent -> merchant : search/cart/checkout -->
+        <mxCell id="e_agent_merchant" value="tools/call: search_catalog · create_cart · complete_checkout&#10;JSON-RPC 2.0 · PKI-signed (RFC 9421)" style="endArrow=classic;html=1;fontSize=10;strokeColor=#2D5F8A;fontColor=#2D5F8A;fontStyle=1;" edge="1" parent="1" source="agent" target="merchant">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="640" y="300" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- merchant -> agent : order webhook -->
+        <mxCell id="e_merchant_webhook" value="signed Order push → /webhooks/ucp" style="endArrow=classic;html=1;fontSize=10;strokeColor=#82B366;dashed=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="merchant" target="agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- agent <-> merchant oauth -->
+        <mxCell id="e_oauth" value="OAuth identity linking (RFC 8414)" style="endArrow=classic;startArrow=classic;html=1;fontSize=10;strokeColor=#82B366;dashed=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="agent" target="merchant">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- agent -> creds -->
+        <mxCell id="e_agent_creds" value="tools/call: list_payment_methods · mint_instrument&#10;sign_mandate · passkey · release_credentials&#10;JSON-RPC 2.0 · PKI-signed" style="endArrow=classic;html=1;fontSize=10;strokeColor=#B97A00;fontColor=#B97A00;fontStyle=1;" edge="1" parent="1" source="agent" target="creds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- agent -> psp (kya lookup) -->
+        <mxCell id="e_agent_psp" value="lookup_agent (KYA)" style="endArrow=classic;html=1;fontSize=10;strokeColor=#B85450;dashed=1;exitX=1;exitY=0.9;exitDx=0;exitDy=0;entryX=0;entryY=0.1;entryDx=0;entryDy=0;" edge="1" parent="1" source="agent" target="psp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- merchant -> psp authorize/capture + KYA -->
+        <mxCell id="e_merchant_psp" value="authorize_payment · capture_payment&#10;lookup_agent (KYA gate)&#10;JSON-RPC 2.0 · PKI-signed" style="endArrow=classic;html=1;fontSize=10;strokeColor=#A33A37;fontColor=#A33A37;fontStyle=1;" edge="1" parent="1" source="merchant" target="psp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- creds -> merchant portal state -->
+        <mxCell id="e_creds_merchant" value="GET /api/portal/state&#10;(wallet merchant list)" style="endArrow=classic;html=1;fontSize=10;strokeColor=#888888;dashed=1;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0.1;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="creds" target="merchant">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- services -> common (dashed uses) -->
+        <mxCell id="e_a_lib" value="" style="endArrow=open;html=1;strokeColor=#999999;dashed=1;endFill=0;" edge="1" parent="1" source="agent" target="common">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_c_lib" value="uses" style="endArrow=open;html=1;fontSize=9;strokeColor=#999999;dashed=1;endFill=0;" edge="1" parent="1" source="creds" target="common">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_p_lib" value="uses" style="endArrow=open;html=1;fontSize=9;strokeColor=#999999;dashed=1;endFill=0;" edge="1" parent="1" source="psp" target="common">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m_lib" value="uses" style="endArrow=open;html=1;fontSize=9;strokeColor=#999999;dashed=1;endFill=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="merchant" target="common">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- otel exports (dashed from agent) -->
+        <mxCell id="e_otel" value="OTLP spans (optional)" style="endArrow=open;html=1;fontSize=9;strokeColor=#999999;dashed=1;endFill=0;exitX=1;exitY=0.4;exitDx=0;exitDy=0;" edge="1" parent="1" source="agent" target="otel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- gateway routes -->
+        <mxCell id="e_gw_m" value="routes :4099 → services" style="endArrow=open;html=1;fontSize=9;strokeColor=#D6B656;dashed=1;endFill=0;" edge="1" parent="1" source="gateway" target="psp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Legend ===== -->
+        <mxCell id="legend" value="Legend" style="swimlane;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=11;fontStyle=1;startSize=22;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="540" width="240" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="── solid bold: signed UCP/AP2&#10;       JSON-RPC 2.0 call (MCP)" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="30" width="220" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="┄┄ dashed: REST / webhook / OAuth&#10;       / optional export" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="66" width="220" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="Each service ships a static UI,&#10;a /.well-known/ucp profile, and&#10;an MCP endpoint. All payloads are&#10;PKI-signed &amp; canonicalized (JCS)." style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#33475B;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="100" width="225" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
