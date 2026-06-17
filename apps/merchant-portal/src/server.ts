@@ -19,7 +19,7 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateSigningKey, randomId, jwkToPublicKey, jwsVerifyCompact, type SigningKey } from "../../../packages/common/src/crypto.ts";
+import { generateSigningKey, randomId, jwkToPublicKey, jwsVerifyCompact, jwsSignCompact, type SigningKey } from "../../../packages/common/src/crypto.ts";
 import {
   mcpHandler,
   callTool,
@@ -35,7 +35,13 @@ import {
   signMerchantAuthorization,
   verifyMerchantAuthorization,
   verifyCheckoutMandate,
+  verifyOpenCheckoutMandate,
+  evaluateCheckoutConstraints,
+  openMandateDigest,
+  checkoutHash,
+  hashClosedMandate,
 } from "../../../packages/common/src/ap2.ts";
+import { isChain, verifyDelegateChain } from "../../../packages/common/src/dsdjwt.ts";
 import {
   PORTS,
   URLS,
@@ -44,6 +50,7 @@ import {
   CREDENTIALS_PROFILE_URL,
   PAYMENTS_PROFILE_URL,
 } from "../../../packages/common/src/config.ts";
+import { type CapabilityMap } from "../../../packages/common/src/negotiation.ts";
 import {
   UCP_VERSION,
   SPEC,
@@ -55,6 +62,8 @@ import {
   type PostalAddress,
   type OrderObject,
   type UcpEnvelope,
+  type CheckoutReceiptPayload,
+  type OpenCheckoutMandatePayload,
 } from "../../../packages/common/src/types.ts";
 import { MERCHANTS, type MerchantSeed } from "./data.ts";
 import { restConformanceRouter } from "./rest-conformance.ts";
@@ -72,8 +81,10 @@ interface OrderRecord {
   evidence: {
     checkout_mandate: string;
     merchant_authorization: string;
-    cart_mandate_id: string;
+    open_checkout_mandate?: string; // human-not-present: user-signed open mandate (jws)
     payment_mandate_id?: string;
+    checkout_receipt?: string; // signed AP2 Checkout Receipt (dispute evidence)
+    payment_receipt?: string; // signed AP2 Payment Receipt (dispute evidence)
     verification: Record<string, string>;
   };
   platform_profile: string;
@@ -214,6 +225,23 @@ function lineItemTotals(li: LineItem): Total[] {
 }
 
 const totalOf = (co: Checkout) => co.totals.find((t) => t.type === "total")?.amount ?? 0;
+
+/**
+ * Full terms comparison between the checkout embedded in the mandate and the
+ * live session: id, currency, grand total, and the line-item set (item id,
+ * quantity, price). Stronger than an id+total check.
+ */
+function termsMatch(a: Checkout, b: Checkout): { ok: true } | { ok: false; detail: string } {
+  if (a.id !== b.id) return { ok: false, detail: `id ${a.id} ≠ ${b.id}` };
+  if (a.currency !== b.currency) return { ok: false, detail: `currency ${a.currency} ≠ ${b.currency}` };
+  const ta = totalOf(a);
+  const tb = totalOf(b);
+  if (ta !== tb) return { ok: false, detail: `total ${ta} ≠ ${tb}` };
+  const norm = (co: Checkout) =>
+    [...(co.line_items ?? [])].map((li) => `${li.item.id}:${li.quantity}:${li.item.price}`).sort().join("|");
+  if (norm(a) !== norm(b)) return { ok: false, detail: `line items differ` };
+  return { ok: true };
+}
 const destinationOf = (co: Checkout): PostalAddress | undefined =>
   co.fulfillment?.methods?.[0]?.destinations?.find(
     (d) => d.id === co.fulfillment!.methods[0].selected_destination_id
@@ -485,65 +513,72 @@ function tenantTools(t: Tenant) {
         if (!mandateJws)
           throw new RpcError(-32000, "AP2 mandate required", UCP_ERR("mandate_required", "ap2.checkout_mandate missing"), 401);
 
-        // 1. Verify the SD-JWT+kb checkout mandate: issuer = CP service key, key-bound
-        //    to the user device key, audience = THIS merchant, nonce = checkout id.
+        // The CP publishes the user device key (open-mandate root signatures) +
+        // its service key (human-present closed mandates).
         const cpProfile = await fetchUcpProfile(CREDENTIALS_PROFILE_URL);
-        let claims;
+        const resolveCpKey = (kid: string) => {
+          const jwk = findJwk(cpProfile, kid);
+          return jwk ? jwkToPublicKey(jwk) : undefined;
+        };
+
+        // 1. Verify the Checkout Mandate. Human-not-present → a dSD-JWT chain:
+        //    open (user-signed root, cnf=agent) ~~ closed (agent-signed terminal),
+        //    where the terminal's sd_hash binds it to the root. Human-present →
+        //    a single SD-JWT+kb signed by the CP, key-bound to the user device.
+        let claims: any; // closed Checkout Mandate
+        let openClaims: OpenCheckoutMandatePayload | undefined; // open Checkout Mandate (HNP)
+        let openCheckoutDigest: string | undefined;
         try {
-          claims = verifyCheckoutMandate(
-            mandateJws,
-            (kid) => {
-              const jwk = findJwk(cpProfile, kid);
-              return jwk ? jwkToPublicKey(jwk) : undefined;
-            },
-            { aud: merchantProfileUrl(seed.id), nonce: co.id }
-          );
+          if (isChain(mandateJws)) {
+            const chain = verifyDelegateChain(mandateJws, resolveCpKey, { aud: merchantProfileUrl(seed.id), nonce: co.id });
+            openClaims = chain.open as OpenCheckoutMandatePayload;
+            claims = chain.closed;
+            openCheckoutDigest = openMandateDigest(chain.rootSdJwt); // for the PSP's payment.reference
+            verification.checkout_mandate = "valid dSD-JWT chain (user-signed open root → agent-signed closed; sd_hash-bound; aud=this merchant)";
+          } else {
+            claims = verifyCheckoutMandate(mandateJws, resolveCpKey, { aud: merchantProfileUrl(seed.id), nonce: co.id });
+            verification.checkout_mandate = `valid SD-JWT+kb (issuer ${claims.iss}, key-bound to user device, aud=this merchant)`;
+          }
         } catch (e: any) {
           const code = /mandate_expired/.test(e.message)
             ? "mandate_expired"
-            : /unknown issuer kid|unknown kid/.test(e.message)
+            : /unknown issuer kid|unknown kid|agent_missing_key/.test(e.message)
               ? "agent_missing_key"
-              : /aud mismatch|nonce mismatch|sd_hash/.test(e.message)
+              : /aud|nonce|sd_hash|scope/.test(e.message)
                 ? "mandate_scope_mismatch"
                 : "mandate_invalid_signature";
           throw new RpcError(-32000, "Mandate verification failed", UCP_ERR(code, e.message), 401);
         }
-        verification.checkout_mandate = `valid SD-JWT+kb (issuer ${claims.iss}, key-bound to user device, aud=this merchant)`;
 
-        // 2. Verify our own merchant_authorization inside the embedded checkout (nested binding)
+        // 1a. Modality enforcement: an autonomous closed mandate MUST ride a chain.
+        if (claims.human_present === false && !openClaims)
+          throw new RpcError(-32000, "Open mandate required", UCP_ERR("mandate_required", "human-not-present requires an open→closed mandate chain"), 401);
+
+        // 2. Verify our merchant_authorization inside the embedded checkout.
         const embedded = claims.checkout;
+        if (!embedded)
+          throw new RpcError(-32000, "Checkout missing in mandate", UCP_ERR("mandate_invalid_signature", "checkout claim absent from mandate"), 401);
         const own = verifyMerchantAuthorization(embedded, [t.key.publicJwk]);
         if (!own.ok)
           throw new RpcError(-32000, "Merchant authorization invalid", UCP_ERR("merchant_authorization_invalid", own.error ?? ""), 401);
         verification.merchant_authorization = `valid (kid=${own.kid})`;
 
-        // 3. Terms must match the live session (id + total)
+        // 3. Terms must match the live session: id, currency, total AND line items
         const liveTotal = totalOf(co);
-        const mandateTotal = embedded.totals?.find((x: any) => x.type === "total")?.amount;
-        if (embedded.id !== co.id || liveTotal !== mandateTotal)
-          throw new RpcError(-32000, "Mandate scope mismatch", UCP_ERR("mandate_scope_mismatch", `mandate bound to ${embedded.id}/${mandateTotal}, session is ${co.id}/${liveTotal}`), 401);
-        verification.terms_match = `checkout ${co.id} · total ${liveTotal} (minor units)`;
+        const tm = termsMatch(embedded, co);
+        if (!tm.ok)
+          throw new RpcError(-32000, "Mandate scope mismatch", UCP_ERR("mandate_scope_mismatch", `${tm.detail} (mandate vs live session ${co.id})`), 401);
+        verification.terms_match = `checkout ${co.id} · total ${liveTotal} · ${co.line_items.length} line item(s) · ${co.currency}`;
 
-        // --- Verified intent across parties: validate the purchase against the
-        //     user's ORIGINAL signed IntentMandate (budget + validity), then
-        //     forward it so the PSP can re-validate independently. ---
-        const intentJws: string | undefined = input?.ap2?.intent_mandate ?? args?.ap2?.intent_mandate;
-        if (intentJws) {
-          try {
-            const { payload: im } = jwsVerifyCompact(intentJws, (kid: string) => {
-              const jwk = findJwk(cpProfile, kid);
-              return jwk ? jwkToPublicKey(jwk) : undefined;
-            });
-            const intent = im as any;
-            if (new Date(intent.expires_at).getTime() < Date.now()) throw new Error(`expired ${intent.expires_at}`);
-            const maxTotal = intent.constraints?.max_total?.amount;
-            if (maxTotal != null && liveTotal > maxTotal) throw new Error(`total ${liveTotal} exceeds the user's signed budget ${maxTotal}`);
-            verification.intent_mandate = `valid (id=${intent.id}) · total within signed budget${maxTotal != null ? ` (≤ ${maxTotal})` : ""}`;
-          } catch (e: any) {
-            throw new RpcError(-32000, "Intent mandate validation failed", UCP_ERR("intent_mandate_invalid", e.message), 401);
-          }
+        // 4. Human-not-present: the agent-signed closed checkout MUST satisfy the
+        //    open Checkout Mandate constraints (allowed_merchants + line_items).
+        if (openClaims) {
+          const ev = evaluateCheckoutConstraints(embedded, openClaims);
+          if (!ev.ok)
+            throw new RpcError(-32000, "Open Checkout Mandate constraint failed", UCP_ERR("mandate_scope_mismatch", ev.error ?? "constraint unmet"), 401);
+          verification.open_checkout_mandate = `valid · constraints satisfied: ${ev.checked.join(", ")}`;
         } else {
-          verification.intent_mandate = "not presented (optional)";
+          verification.open_checkout_mandate = "n/a (human-present — user approved the closed mandate directly)";
         }
         log(seed.id, "ap2.verify", `checkout_mandate verified for ${co.id}`, verification);
 
@@ -567,11 +602,18 @@ function tenantTools(t: Tenant) {
               merchant_id: seed.id,
               merchant_profile: merchantProfileUrl(seed.id),
               checkout_id: co.id,
+              // AP2 checkout_hash = hash(checkout_jwt), carried in the verified
+              // closed Checkout Mandate; the PSP asserts the Payment Mandate's
+              // transaction_id equals this (binds payment ↔ signed terms).
+              checkout_hash: claims.checkout_hash,
               amount: { amount: liveTotal, currency: co.currency },
               credential: composite,
-              // Verified intent across parties: the PSP re-validates the user's
-              // original signed intent independently of this merchant.
-              intent_mandate: intentJws,
+              // Human-not-present: the PSP independently verifies the open Payment
+              // Mandate (carried in the composite token) and that the closed
+              // payment satisfies its constraints; open_checkout_digest lets it
+              // bind the open Payment Mandate's payment.reference.
+              human_present: claims.human_present !== false,
+              open_checkout_digest: openCheckoutDigest,
               challenge_attestation: input?.ap2?.challenge_attestation ?? args?.challenge_attestation,
             },
             signals: input.signals,
@@ -604,6 +646,16 @@ function tenantTools(t: Tenant) {
 
         // --- Order creation (Order capability object, kept for webhooks/portal) ---
         const orderId = randomId("ord", 12);
+        // AP2 Checkout Receipt: the merchant MUST return a signed receipt once it
+        // has accepted the Checkout Mandate. reference = hash of the closed mandate.
+        const checkoutReceipt: CheckoutReceiptPayload = {
+          status: "Success",
+          iss: merchantProfileUrl(seed.id),
+          iat: Math.floor(Date.now() / 1000),
+          reference: hashClosedMandate(mandateJws),
+          order_id: orderId,
+        };
+        const checkoutReceiptJws = jwsSignCompact(checkoutReceipt, t.key, "ap2-receipt+jwt");
         const eta = new Date(Date.now() + 2 * 864e5).toISOString();
         const dest = destinationOf(co)!;
         const orderObj: OrderObject = {
@@ -661,8 +713,10 @@ function tenantTools(t: Tenant) {
           evidence: {
             checkout_mandate: mandateJws,
             merchant_authorization: embedded.ap2!.merchant_authorization!,
-            cart_mandate_id: claims.cart_mandate_id,
+            open_checkout_mandate: openCheckoutDigest, // present iff human-not-present (chain)
             payment_mandate_id: auth.payment_mandate_id,
+            checkout_receipt: checkoutReceiptJws,
+            payment_receipt: auth.payment_receipt,
             verification,
           },
           platform_profile: ctx.signerProfileUrl,
@@ -674,6 +728,8 @@ function tenantTools(t: Tenant) {
         co.order = { id: orderId, permalink_url: orderObj.permalink_url, label: orderObj.label, estimated_delivery: eta };
         const signed = refreshCheckout(t, co);
         signed.status = "completed";
+        // Surface both AP2 receipts on the completed checkout (next to merchant_authorization).
+        signed.ap2 = { ...(signed.ap2 ?? {}), checkout_receipt: checkoutReceiptJws, payment_receipt: auth.payment_receipt };
         log(seed.id, "complete_checkout", `order ${orderId} created (${liveTotal} minor units)`);
 
         // Auto-ship after a few seconds (fulfillment center simulation) → signed Order webhook
@@ -850,11 +906,11 @@ function tenantTools(t: Tenant) {
           reason: args?.reason ?? "item_not_as_described",
           occurred_at: new Date().toISOString(),
           evidence: {
-            cart_mandate_id: rec.evidence.cart_mandate_id,
+            open_checkout_mandate_present: !!rec.evidence.open_checkout_mandate,
             checkout_mandate_present: true,
             merchant_authorization_present: true,
             verification: rec.evidence.verification,
-            note: "User-signed mandate proves authorization of these exact terms (AP2 dispute evidence).",
+            note: "Signed mandate chain (closed Checkout Mandate + merchant_authorization, plus the user-signed Open Checkout Mandate for autonomous purchases) proves authorization of these exact terms (AP2 dispute evidence).",
           },
         };
         rec.order.adjustments = [...(rec.order.adjustments ?? []), adj];
@@ -1093,6 +1149,21 @@ app.post("/m/:mid/oauth/token", express.urlencoded({ extended: true }), express.
 
 // Tenant MCP endpoints (PKI-verified JSON-RPC 2.0, tools/call binding).
 // complete_checkout responses are signed (RFC 9421, @status) — RECOMMENDED.
+// This business's advertised capabilities (names + versions + extends), mirroring
+// the set published at /m/:mid/.well-known/ucp. Used to compute the platform↔
+// business capability intersection per request (UCP Negotiation Protocol).
+const MERCHANT_CAPS: CapabilityMap = {
+  "dev.ucp.shopping.checkout": [{ version: UCP_VERSION }],
+  "dev.ucp.shopping.cart": [{ version: UCP_VERSION }],
+  "dev.ucp.shopping.catalog.search": [{ version: UCP_VERSION }],
+  "dev.ucp.shopping.catalog.lookup": [{ version: UCP_VERSION }],
+  "dev.ucp.shopping.order": [{ version: UCP_VERSION }],
+  "dev.ucp.shopping.fulfillment": [{ version: UCP_VERSION, extends: "dev.ucp.shopping.checkout" }],
+  "dev.ucp.shopping.discount": [{ version: UCP_VERSION, extends: "dev.ucp.shopping.checkout" }],
+  "dev.ucp.shopping.ap2_mandate": [{ version: UCP_VERSION, extends: "dev.ucp.shopping.checkout" }],
+  "dev.ucp.common.identity_linking": [{ version: UCP_VERSION }],
+};
+
 for (const [mid, t] of tenants) {
   app.post(
     `/m/${mid}/mcp`,
@@ -1102,6 +1173,10 @@ for (const [mid, t] of tenants) {
       trustedProfiles: defaultTrust,
       responseKey: t.key,
       signResponseFor: (name) => name === "complete_checkout",
+      // Platform-facing endpoint: compute + enforce the capability intersection.
+      businessCapabilities: MERCHANT_CAPS,
+      enforceNegotiation: true,
+      continueUrlFor: () => `https://${t.seed.domain}/`,
     })
   );
 }

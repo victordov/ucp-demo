@@ -111,10 +111,8 @@ msg(step(), lx("Shopping Agent"), lx("LLM provider"), "parse intent / drive chat
 msg(step(), lx("Shopping Agent"), lx("Merchant"), "GET /.well-known/ucp  · REST (discovery + JWKs)", GRAY, dashed=True)
 # phase 2
 y = 430
-msg(y, lx("Shopping Agent"), lx("Credentials Provider"), "sign_mandate(IntentMandate)  · MCP", VIOLET)
-msg(step(), lx("Shopping Agent"), lx("Merchant"), "search_catalog / lookup  · MCP (JSON-RPC tools/call)", INDIGO)
+msg(y, lx("Shopping Agent"), lx("Merchant"), "search_catalog / lookup (within constraints)  · MCP (JSON-RPC tools/call)", INDIGO)
 msg(step(), lx("Shopping Agent"), lx("Merchant"), "create_checkout → checkout + merchant_authorization (detached JWS)  · MCP", INDIGO)
-msg(step(), lx("Shopping Agent"), lx("Credentials Provider"), "sign_mandate(CartMandate)  · MCP", VIOLET)
 # phase 3
 y = 644
 msg(y, lx("User"), lx("Credentials Provider"), "Touch ID — WebAuthn/SPC over SHA-256(JCS(checkout))  · REST", TEAL, dashed=True)
@@ -124,10 +122,10 @@ msg(step(), lx("Shopping Agent"), lx("Credentials Provider"), "② sign_mandate(
 msg(step(), lx("Shopping Agent"), lx("Credentials Provider"), "sign_mandate(CheckoutMandate → SD-JWT+kb, aud=merchant)  · MCP", VIOLET)
 # phase 4
 y = 910
-msg(y, lx("Shopping Agent"), lx("Merchant"), "complete_checkout (composite token + checkout & intent mandates)  · MCP", INDIGO, width=3)
+msg(y, lx("Shopping Agent"), lx("Merchant"), "complete_checkout (composite token + checkout_mandate)  · MCP", INDIGO, width=3)
 msg(step(), lx("Merchant"), lx("Payment Provider"), "lookup_agent  (Know-Your-Agent gate)  · MCP", AMBER)
-msg(step(), lx("Merchant"), lx("Merchant"), "verify SD-JWT+kb · merchant_authorization · terms · intent ceiling", TEAL)
-msg(step(), lx("Merchant"), lx("Payment Provider"), "authorize_payment (composite token + intent)  · MCP", AMBER, width=3)
+msg(step(), lx("Merchant"), lx("Merchant"), "verify SD-JWT+kb · merchant_authorization · terms match", TEAL)
+msg(step(), lx("Merchant"), lx("Payment Provider"), "authorize_payment (composite token · payment_mandate)  · MCP", AMBER, width=3)
 msg(step(), lx("Payment Provider"), lx("Credentials Provider"), "③ release_credentials  (policy gate 3 — re-check from token)  · MCP", VIOLET)
 msg(step(), lx("Credentials Provider"), lx("Payment Provider"), "credentials + behavior + rail", VIOLET, ret=True)
 msg(step(), lx("Payment Provider"), lx("Merchant"), "authorized (rail recorded)", AMBER, ret=True)

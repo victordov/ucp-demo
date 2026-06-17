@@ -8,8 +8,30 @@ export interface ParsedIntent {
   required_features: string[];
   max_total?: number;
   delivery_days?: number;
+  /** Human-not-present: the user asked the agent to buy on its own. */
+  autonomous?: boolean;
+  /** Conditional cap from "buy if it drops below $X" — sets the open Payment
+   *  Mandate amount_range (dollars). Implies autonomous. */
+  buy_below?: number;
   query: string;
   engine: "deterministic" | "llm";
+}
+
+const AUTONOMY_RE =
+  /\b(autonomous(?:ly)?|human[ -]?not[ -]?present|on my behalf|without me|while i'?m away|you decide|don'?t ask|just buy it|buy it for me|purchase it for me|go ahead and buy|buy the best)\b/i;
+
+/**
+ * Deterministic detection of human-not-present intent and an optional conditional
+ * price cap ("buy if it drops below $X"). Runs for both the deterministic and LLM
+ * parsers so autonomy is recognised reliably from the chat text itself.
+ */
+export function detectAutonomy(text: string): { autonomous: boolean; buy_below?: number } {
+  const drop =
+    text.match(/(?:buy|purchase|get|grab|snag|order)[^.]*?(?:if|when|once)[^.]*?(?:drops?|falls?|goes?|below|under|less than|<=|≤)\s*\$?\s*([\d,]+)/i) ??
+    text.match(/(?:if|when|once)[^.]*?(?:drops?|falls?|below|under)\s*\$?\s*([\d,]+)/i);
+  const buy_below = drop ? Number(drop[1].replace(/,/g, "")) : undefined;
+  const autonomous = AUTONOMY_RE.test(text) || buy_below != null;
+  return { autonomous, ...(buy_below != null ? { buy_below } : {}) };
 }
 
 export function parseDeterministic(text: string): ParsedIntent {
@@ -39,6 +61,10 @@ export function parseDeterministic(text: string): ParsedIntent {
   if (/headphone|headset|earphone|ear ?bud/.test(t)) out.category = "headphones";
   else if (/speaker/.test(t)) out.category = "speakers";
   else if (/case/.test(t)) out.category = "accessories";
+
+  const a = detectAutonomy(text);
+  out.autonomous = a.autonomous;
+  if (a.buy_below != null) out.buy_below = a.buy_below;
 
   return out;
 }
@@ -104,10 +130,16 @@ export function llmEnabled(): boolean {
 
 export async function parseIntent(text: string): Promise<ParsedIntent> {
   try {
-    if (process.env.OPENAI_API_KEY) return await parseWithOpenAI(text, process.env.OPENAI_API_KEY);
-    if (process.env.ANTHROPIC_API_KEY) return await parseWithAnthropic(text, process.env.ANTHROPIC_API_KEY);
+    if (process.env.OPENAI_API_KEY) return mergeAutonomy(text, await parseWithOpenAI(text, process.env.OPENAI_API_KEY));
+    if (process.env.ANTHROPIC_API_KEY) return mergeAutonomy(text, await parseWithAnthropic(text, process.env.ANTHROPIC_API_KEY));
   } catch (e: any) {
     console.warn(`[agent] LLM intent parsing failed (${e.message}) — falling back to deterministic parser`);
   }
   return parseDeterministic(text);
+}
+
+/** Merge deterministic autonomy detection onto an LLM-parsed intent. */
+function mergeAutonomy(text: string, base: ParsedIntent): ParsedIntent {
+  const a = detectAutonomy(text);
+  return { ...base, autonomous: a.autonomous || base.autonomous, buy_below: a.buy_below ?? base.buy_below };
 }

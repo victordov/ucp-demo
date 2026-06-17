@@ -7,8 +7,11 @@
 window.Passkey = (() => {
   const W = window.SimpleWebAuthnBrowser;
 
-  const b64uToBuf = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-  const bufToB64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  // Reuse SimpleWebAuthn's own base64url <-> buffer helpers (one well-tested
+  // implementation) rather than hand-rolling them. base64URLStringToBuffer →
+  // ArrayBuffer (a valid BufferSource for SPC); bufferToBase64URLString ← buffer.
+  const b64uToBuf = W.base64URLStringToBuffer;
+  const bufToB64u = W.bufferToBase64URLString;
 
   // 1×1 transparent PNG — SPC requires an instrument icon URL.
   const ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -51,19 +54,49 @@ window.Passkey = (() => {
     };
   }
 
+  // A passkey is scoped to its RP ID = the effective domain of THIS wallet page.
+  // Pin every ceremony to location.hostname so it works identically on localhost
+  // and behind ngrok / localtunnel (and survives ngrok's rotating subdomains) —
+  // never a stale, server-baked RP ID that mismatches the page. The `hint` steers
+  // the authenticator: "client-device" = the built-in platform authenticator
+  // (macOS Touch ID, the default — so the browser doesn't hand the ceremony to a
+  // password-manager extension like LastPass); "hybrid" = a phone / QR, letting
+  // the user deliberately pick another device.
+  function pinCeremony(options, kind, hint) {
+    const o = Object.assign({}, options);
+    o.hints = [hint || "client-device"];
+    if (kind === "register") {
+      o.rp = Object.assign({}, o.rp, { id: location.hostname });
+      o.authenticatorSelection = Object.assign(
+        { residentKey: "preferred", userVerification: "required" },
+        o.authenticatorSelection,
+        { authenticatorAttachment: hint === "hybrid" ? "cross-platform" : "platform" }
+      );
+    } else {
+      o.rpId = location.hostname;
+    }
+    return o;
+  }
+
   return {
     available: () => !!(window.PublicKeyCredential && W),
-    // Returns { assertion, method: 'spc' | 'webauthn' }
-    async auth({ options, payment, amount, payee }) {
-      try {
-        const spc = await spcAuth(options, payment, amount, payee);
-        if (spc) return { assertion: spc, method: "spc" };
-      } catch (e) { console.warn("[passkey] SPC unavailable, using WebAuthn:", e.message); }
-      const assertion = await W.startAuthentication({ optionsJSON: options });
+    // auth({ ..., prefer }): returns { assertion, method: 'spc' | 'webauthn' }.
+    // prefer === "hybrid" routes to a phone / QR and skips the platform-only SPC
+    // sheet, so the user can choose another device instead of macOS Touch ID.
+    async auth({ options, payment, amount, payee, prefer }) {
+      const hint = prefer === "hybrid" ? "hybrid" : "client-device";
+      const opts = pinCeremony(options, "auth", hint);
+      if (prefer !== "hybrid") {
+        try {
+          const spc = await spcAuth(opts, payment, amount, payee);
+          if (spc) return { assertion: spc, method: "spc" };
+        } catch (e) { console.warn("[passkey] SPC unavailable, using WebAuthn:", e.message); }
+      }
+      const assertion = await W.startAuthentication({ optionsJSON: opts });
       return { assertion, method: "webauthn" };
     },
     async register(options) {
-      return W.startRegistration({ optionsJSON: options });
+      return W.startRegistration({ optionsJSON: pinCeremony(options, "register", "client-device") });
     },
   };
 })();

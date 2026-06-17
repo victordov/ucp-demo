@@ -25,6 +25,14 @@ import { randomUUID } from "node:crypto";
 import { signRequest, signResponse, verifyResponse, verifyRequest, type ProfileFetcher } from "./httpsig.ts";
 import { sha256, type SigningKey, type Jwk } from "./crypto.ts";
 import { UCP_VERSION } from "./types.ts";
+import {
+  intersectCapabilities,
+  asCapabilityMap,
+  validateProfileShape,
+  ucpErrorStatus,
+  type CapabilityMap,
+  type CapDecl,
+} from "./negotiation.ts";
 
 /* ---------------- shared profile cache (min TTL floor per spec) ---------------- */
 
@@ -80,6 +88,8 @@ export interface RpcContext {
   keyId: string;
   meta: Record<string, any>;
   req: Request;
+  /** Negotiated capability set for this request (active intersection), when computed. */
+  negotiation?: { version: string; active: string[] };
 }
 
 export type ToolHandler = (args: any, ctx: RpcContext) => Promise<unknown> | unknown;
@@ -102,6 +112,21 @@ export interface McpServerOptions {
   /** RECOMMENDED response signing (RFC 9421, @status): sign successful results of these tools. */
   responseKey?: SigningKey;
   signResponseFor?: (toolName: string) => boolean;
+  /**
+   * This business's advertised capabilities (same set as /.well-known/ucp). When
+   * present, the handler computes the platform↔business capability intersection
+   * per request and exposes it as ctx.negotiation.
+   */
+  businessCapabilities?: CapabilityMap;
+  /**
+   * Enforce negotiation: validate the platform profile shape + version and reject
+   * with profile_malformed / version_unsupported / capabilities_incompatible when
+   * appropriate. Enable on platform-facing (shopping) endpoints only — NOT on
+   * inter-service endpoints, where the caller is a peer service, not a platform.
+   */
+  enforceNegotiation?: boolean;
+  /** Fallback web URL for negotiation failures (continue_url). */
+  continueUrlFor?: (toolName: string, args: any) => string | undefined;
 }
 
 const idempotencyStore = new Map<string, { bodyHash: string; response: unknown; at: number }>();
@@ -177,7 +202,12 @@ export function mcpHandler(opts: McpServerOptions) {
     const headerProfile = headerAgent.match(/profile="([^"]+)"/)?.[1];
     const metaProfile: string | undefined = meta["ucp-agent"]?.profile;
     if (!metaProfile) {
-      return rpcError(401, -32001, "UCP discovery failed", UCP_ERR("invalid_profile_url", 'meta["ucp-agent"].profile is required'));
+      return rpcError(400, -32001, "UCP discovery failed", UCP_ERR("invalid_profile_url", 'meta["ucp-agent"].profile is required'));
+    }
+    try {
+      new URL(metaProfile);
+    } catch {
+      return rpcError(400, -32001, "UCP discovery failed", UCP_ERR("invalid_profile_url", `malformed profile URL: ${metaProfile}`));
     }
     // Identity binding: authenticated identity must be consistent with the claimed profile
     if (headerProfile && headerProfile !== metaProfile) {
@@ -201,9 +231,47 @@ export function mcpHandler(opts: McpServerOptions) {
       profileFetcher
     );
     if (!ver.ok) {
-      const status = ver.error === "profile_unreachable" ? 424 : ver.error === "digest_mismatch" ? 400 : 401;
-      const code = ver.error === "profile_unreachable" ? -32001 : ver.error === "digest_mismatch" ? -32600 : -32000;
-      return rpcError(status, code, "Signature verification failed", UCP_ERR(ver.error ?? "signature_invalid", `PKI verification failed (${ver.error})`));
+      // Spec error table (signatures): algorithm_unsupported/digest_mismatch → 400/-32600;
+      // signature_*/key_not_found → 401/-32000; profile_unreachable → 424/-32001.
+      const { http, mcp } = ucpErrorStatus((ver.error ?? "").split(":")[0].trim());
+      return rpcError(http, mcp, "Signature verification failed", UCP_ERR(ver.error ?? "signature_invalid", `PKI verification failed (${ver.error})`));
+    }
+
+    // ---- 3b. UCP capability negotiation (business side) ----
+    // Compute the platform↔business capability intersection per the spec's
+    // Negotiation Protocol. Enforced only on platform-facing endpoints.
+    let negotiation: { version: string; active: string[] } | undefined;
+    if (opts.businessCapabilities) {
+      let callerProfile: any;
+      try {
+        callerProfile = await fetchUcpProfile(metaProfile);
+      } catch {
+        return rpcError(424, -32001, "UCP discovery failed", UCP_ERR("profile_unreachable", `could not fetch platform profile ${metaProfile}`, opts.continueUrlFor?.(toolName!, args)));
+      }
+      if (opts.enforceNegotiation) {
+        try {
+          validateProfileShape(callerProfile);
+        } catch (e: any) {
+          return rpcError(422, -32001, "UCP discovery failed", UCP_ERR("profile_malformed", e.message, opts.continueUrlFor?.(toolName!, args)));
+        }
+        if (callerProfile.ucp.version !== UCP_VERSION) {
+          return rpcError(422, -32001, "UCP version unsupported", UCP_ERR("version_unsupported", `platform protocol version ${callerProfile.ucp.version} ≠ ${UCP_VERSION}`, opts.continueUrlFor?.(toolName!, args)));
+        }
+      }
+      const { active } = intersectCapabilities(
+        asCapabilityMap(opts.businessCapabilities),
+        (callerProfile?.ucp?.capabilities ?? {}) as Record<string, CapDecl[]>
+      );
+      negotiation = { version: UCP_VERSION, active };
+      // Capability negotiation failure is a BUSINESS OUTCOME (JSON-RPC result), not a transport error.
+      if (opts.enforceNegotiation && active.length === 0) {
+        const continue_url = opts.continueUrlFor?.(toolName!, args);
+        return reply(200, mcpResult(rpcId, {
+          ucp: { version: UCP_VERSION, status: "error", capabilities: {} },
+          messages: [{ type: "error", code: "capabilities_incompatible", content: "No mutually-supported capabilities between platform and business", severity: "unrecoverable" }],
+          ...(continue_url ? { continue_url } : {}),
+        }));
+      }
     }
 
     // ---- 4. Tool resolution ----
@@ -227,7 +295,7 @@ export function mcpHandler(opts: McpServerOptions) {
     }
 
     // ---- 6. Dispatch ----
-    const ctx: RpcContext = { signerProfileUrl: ver.profileUrl!, keyId: ver.keyId!, meta, req };
+    const ctx: RpcContext = { signerProfileUrl: ver.profileUrl!, keyId: ver.keyId!, meta, req, negotiation };
     let response: unknown;
     let httpStatus = 200;
     try {
@@ -245,7 +313,14 @@ export function mcpHandler(opts: McpServerOptions) {
         opts.onCall?.(toolName!, args, ctx, undefined, e.messages);
       } else if (e instanceof RpcError) {
         httpStatus = e.httpStatus;
-        response = { jsonrpc: "2.0", id: rpcId, error: { code: e.code, message: e.message, ...(e.data ? { data: e.data } : {}) } };
+        let data = e.data;
+        // Spec: 429/503 SHOULD carry Retry-After (REST) + error.data.retry_after (MCP).
+        if (httpStatus === 429 || httpStatus === 503) {
+          const retryAfter = (e.data?.retry_after as number) ?? 5;
+          data = { ...(e.data ?? {}), retry_after: retryAfter };
+          res.set("Retry-After", String(retryAfter));
+        }
+        response = { jsonrpc: "2.0", id: rpcId, error: { code: e.code, message: e.message, ...(data ? { data } : {}) } };
         opts.onCall?.(toolName!, args, ctx, undefined, e.message);
       } else {
         httpStatus = 500;

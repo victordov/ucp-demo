@@ -89,6 +89,7 @@ function App() {
     setTrace((tr) => [...tr, ev]);
     setTraceUnseen((n) => (traceOpenRef.current ? 0 : n + 1));
     if (t.autoOpenTrace && ev.layer === "AP2" && !traceOpenRef.current) openTrace();
+    return ev;
   }
   const traceOpenRef = useRef(traceOpen); useEffect(() => { traceOpenRef.current = traceOpen; }, [traceOpen]);
   function openTrace() { setTraceOpen(true); setTraceUnseen(0); }
@@ -100,8 +101,8 @@ function App() {
     await botType(900);
     emit(S.TRACE.discovery);
     await sleep(260); emit(S.TRACE.negotiate);
-    await sleep(320); emit(S.TRACE.intentMandate, null, true);
-    addBot(`Locked in. I captured your constraints as a signed <span class="hl">Intent Mandate</span> — <b>over-ear · noise-cancelling · under $300 · 2-day delivery</b>. That's the boundary I'll shop within.`);
+    await sleep(320); emit(S.TRACE.shoppingIntent);
+    addBot(`Locked in. I captured your <span class="hl">constraints</span> — <b>over-ear · noise-cancelling · under $300 · 2-day delivery</b>. That's the boundary I'll shop within; you'll authorize the actual purchase later by signing the Checkout + Payment Mandates.`);
     await sleep(500);
     emit(S.TRACE.catalogSearch);
     await botType(950);
@@ -154,13 +155,7 @@ function App() {
     await sleep(320);
     emit(S.TRACE.updateCheckout, { checkoutId: ids.current.checkoutId, address: addrRef.current, ...totals });
     await sleep(340);
-    const cm = S.TRACE.cartMandate({ merchant: c.merchant, items: c.items, checkoutId: ids.current.checkoutId, total: totals.total });
-    cm.uid = "ev" + _uid++; cm.ts = Date.now(); cm._auto = true;
-    ids.current.cartId = cm.mandate.id;
-    setTrace((tr) => [...tr, cm]);
-    setTraceUnseen((n) => (traceOpenRef.current ? 0 : n + 1));
-    if (t.autoOpenTrace && !traceOpenRef.current) openTrace();
-    addBot(`Here's your checkout with <span class="hl">${c.merchant.name}</span>. I attached your <b>default shipping address</b> and sealed a <span class="hl">Cart Mandate</span> for <b>${S.money(totals.total)}</b> — verified to sit under your $300 intent. Review it and pay with Google Pay when ready.`);
+    addBot(`Here's your checkout with <span class="hl">${c.merchant.name}</span>. I attached your <b>default shipping address</b>, and the merchant signed these exact terms (<span class="hl">merchant_authorization</span>) — which I verified — for <b>${S.money(totals.total)}</b>, within your $300 limit. When you confirm, you'll sign a <span class="hl">Checkout Mandate</span> over these terms and pay with Google Pay.`);
     await sleep(150);
     addBlock("checkout");
     setPhase("checkout");
@@ -192,16 +187,18 @@ function App() {
     setGpayOpen(false);
     const c = cartRef.current;
     const totals = computeTotals(c.items);
-    // payment mandate
-    const pm = S.TRACE.paymentMandate({ merchant: c.merchant, total: totals.total, cartId: ids.current.cartId });
-    pm.uid = "ev" + _uid++; pm.ts = Date.now(); pm._auto = true; ids.current.payId = pm.mandate.id;
-    setTrace((tr) => [...tr, pm]);
-    setTraceUnseen((n) => (traceOpenRef.current ? 0 : n + 1));
+    // checkout mandate — at consent the user key-binds the merchant-signed checkout (SD-JWT+kb)
+    const com = emit(S.TRACE.checkoutMandate, { merchant: c.merchant, items: c.items, checkoutId: ids.current.checkoutId, total: totals.total }, true);
+    ids.current.checkoutMandateId = com.mandate.id;
+    await sleep(350);
+    // payment mandate — bound to the signed checkout
+    const pm = emit(S.TRACE.paymentMandate, { merchant: c.merchant, total: totals.total, checkoutMandateId: ids.current.checkoutMandateId }, true);
+    ids.current.payId = pm.mandate.id;
     await sleep(450);
     const orderId = "ord_" + S.shortHash(12);
     const eta = new Date(Date.now() + 2 * 864e5).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
     ids.current.orderId = orderId; ids.current.eta = eta;
-    emit(S.TRACE.completeCheckout, { checkoutId: ids.current.checkoutId, orderId, total: totals.total, cartId: ids.current.cartId, payId: ids.current.payId, eta });
+    emit(S.TRACE.completeCheckout, { checkoutId: ids.current.checkoutId, orderId, total: totals.total, checkoutMandateId: ids.current.checkoutMandateId, payId: ids.current.payId, eta });
     setOrder({ id: orderId, eta });
     await botType(900);
     addBot(`<b>Paid.</b> Your order with <span class="hl">${c.merchant.name}</span> is confirmed — <b>${S.money(totals.total)}</b> charged via Google Pay, arriving <b>${eta}</b>. Here's your receipt.`);

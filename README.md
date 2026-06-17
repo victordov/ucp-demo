@@ -56,6 +56,8 @@ watch in the trace:
 | | `autonomy` human-not-present blocked by policy | |
 | | `kya_blocked` suspended agent refused (KYA) | |
 | | `velocity` 3 rapid buys → rate-limited | |
+| | `hnp_over_cap` HNP buy over the **open Payment Mandate** `amount_range` → PSP rejects | |
+| | `hnp_merchant_blocked` HNP buy outside the **open Checkout Mandate** `allowed_merchants` → merchant rejects | |
 
 ### Agent-economy controls (spend policy · KYA · multi-rail · audit)
 
@@ -71,11 +73,17 @@ tokens, Know-Your-Agent, multi-rail settlement):
   snapshot is **bound into the token**, like a network-enforced scope), at
   `sign_mandate` (PaymentMandate), and **re-checked by the PSP** from the
   token at authorization (defense in depth).
-- **Verified intent across parties** — the agent presents the user's signed
-  `IntentMandate` at `complete_checkout`; the **merchant** validates the basket
-  against the signed purchase ceiling and forwards it so the **PSP**
-  independently re-validates (`intent_mandate` rows in both verification logs).
-  The signed ceiling = item budget + 20% fees headroom + $20 shipping.
+- **Open/closed mandates across parties (human-not-present)** — the agent
+  presents the user-signed **Open Checkout Mandate** (`mandate.checkout.open.1`,
+  `checkout.allowed_merchants` + `checkout.line_items`) and **Open Payment
+  Mandate** (`mandate.payment.open.1`, `payment.amount_range` + `payment.reference`
+  [+ `payment.agent_recurrence`]) alongside the **agent-signed** closed mandates.
+  The **merchant** verifies the closed Checkout Mandate satisfies the open
+  constraints; the **PSP** independently verifies the closed Payment Mandate
+  against the open constraints (`open_checkout_mandate` / `open_payment_mandate`
+  rows in both verification logs). Each open mandate is sender-constrained to the
+  agent key via `cnf`. The signed amount ceiling = item budget + 20% fees
+  headroom + $20 shipping.
 - **Multi-rail settlement** — merchants and the wallet advertise two UCP
   `payment_handlers`: `com.google.pay` (card network token) and
   `com.paystream.rtp` (instant bank transfer from an RTP-capable checking
@@ -100,9 +108,10 @@ tokens, Know-Your-Agent, multi-rail settlement):
   appears in **Walletly → Approval inbox** where the user approves/denies. An
   approval waives the autonomy gate for that checkout only (caps/budget/
   allowlist still apply). Scenario: `approval`.
-- **Standing intent (recurring)** — scenario `subscription`: one signed
-  IntentMandate authorizes two autonomous purchase cycles; merchant + PSP
-  verify the same standing intent each cycle.
+- **Standing intent (recurring)** — scenario `subscription`: one signed Open
+  Payment Mandate carrying a `payment.agent_recurrence` constraint (ON_DEMAND
+  ×2) authorizes two autonomous purchase cycles; the PSP bounds the occurrence
+  count and merchant + PSP verify the same open mandates each cycle.
 - **OTel export** — set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
   and every protocol-trace event is exported as an OTLP/HTTP JSON span (one
   trace per session, `ucp.*` attributes incl. the audit-chain hash). Works
@@ -132,10 +141,21 @@ With `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` set there are two LLM-driven modes:
   (conversation persists per session).
 - **Autonomous agent** — `POST /api/agent` (or *Run LLM agent* in the scenario
   console): the model completes the whole purchase from a single goal, no
-  turn-taking.
+  turn-taking. This runs **human-not-present**: it mints the user-signed open
+  mandates and signs the closed mandates itself. In chat, an explicit "just buy
+  it for me" triggers the `buy_autonomously` tool (same flow).
 
 Without a key, the chat uses the scripted deterministic flow (you click to pick
 merchant, shipping and payment); intent parsing still works via regex.
+
+**Human-present ⟷ human-not-present toggle (live flow, no LLM needed).** The
+composer has a **🙋 Human-present / 🤝 Human-not-present** switch. In
+human-not-present mode the agent signs an Open Checkout + Open Payment Mandate up
+front (`POST /api/intent {human_present:false}` or `POST /api/mode`), then at pay
+time signs the closed mandates itself and completes the purchase with no card tap
+— the merchant and PSP verify the closed mandates satisfy the open constraints.
+The `hnp_over_cap` and `hnp_merchant_blocked` scenarios show those constraints
+being enforced.
 
 `npm run validate` (services running) is the deep conformance gate: it loads
 the **official UCP schema tree** vendored in `./schemas` (copied from the
@@ -243,7 +263,8 @@ endpoints.
   discount line; invalid codes return a `warning` message (covered by the
   merchant_authorization signature).
 - **Fulfillment options**: standard vs express; selecting express changes
-  totals and re-issues both the merchant signature and the Cart Mandate.
+  totals and re-issues the merchant signature (the closed Checkout Mandate is
+  signed over the final terms at pay time).
 - **Identity Linking** (`dev.ucp.common.identity_linking`): business-hosted
   OAuth 2.0 with RFC 8414 discovery; the agent links the account and reads
   order history via `list_orders`, gated by the `dev.ucp.shopping.order:read`
@@ -262,8 +283,10 @@ the signer's fetched profile; AP2 short-term trust registries (allowlists).
   (RFC 7515 App. F) over the **JCS-canonicalized (RFC 8785)** checkout
   excluding `ap2`; the platform verifies it before showing anything to the
   user.
-- The user's Intent / Cart / Payment mandates are signed by the **device key**
-  held at the Credentials Provider (trusted platform provider model).
+- Human-present mandates (closed Checkout & Payment) are signed by the **device
+  key** held at the Credentials Provider (trusted platform provider model).
+  Human-not-present authorization uses user-signed **open** Checkout/Payment
+  Mandates (`cnf`=agent key) under which the **agent** signs the closed mandates.
 - The `ap2.checkout_mandate` is a **real SD-JWT+kb** verifiable credential
   (`dc+sd-jwt~kb`): the Credentials Provider is the **issuer**, the user's
   device key is the **holder** (a Key-Binding JWT, `typ=kb+jwt`, binds
@@ -272,8 +295,9 @@ the signer's fetched profile; AP2 short-term trust registries (allowlists).
   It embeds the full merchant-signed checkout (nested binding).
 - `complete_checkout` is rejected without `ap2.checkout_mandate`
   (`mandate_required`) — the session is security-locked. The PSP independently
-  verifies the Payment Mandate inside the AP2 composite token
-  (amount/payee/checkout/cart linkage/expiry) before pulling credentials from
+  verifies the closed Payment Mandate inside the AP2 composite token
+  (amount/payee/checkout/expiry, plus — for human-not-present — the open Payment
+  Mandate constraints and closed↔open binding) before pulling credentials from
   the CP against the single-use network token.
 - **Real passkey / Touch ID user verification** (feature flag `PASSKEYS`, **on
   by default**). When the user enrolls a platform passkey, the checkout-mandate
@@ -297,11 +321,11 @@ the signer's fetched profile; AP2 short-term trust registries (allowlists).
 
 1. **Discovery** — fetch `/.well-known/ucp` from all merchants; resolve MCP endpoints from `ucp.services`.
 2. **Negotiation** — capability intersection per the spec algorithm (name + mutual version, orphaned-extension pruning); `ap2_mandate` present ⇒ security-locked.
-3. **Intent Mandate** *(AP2)* — constraints parsed (deterministic or LLM), signed by the user device key.
-4. **Federated `search_catalog`** — signed fan-out, offers merged per product, filtered by mandate constraints.
+3. **Authorization** *(AP2)* — *human-present:* none up front (the user approves the closed mandates at pay time). *Human-not-present:* the user device key signs **Open Checkout + Open Payment Mandates** (constraints + `cnf`=agent key).
+4. **Federated `search_catalog`** — signed fan-out, offers merged per product, filtered by the user's constraints.
 5. **`create_checkout` / `update_checkout`** — merchant returns signed checkouts; agent verifies `merchant_authorization` each time.
-6. **Cart Mandate** *(AP2)* — re-issued whenever terms change (qty/address).
-7. **Payment** — Google-Pay-style sheet → CP mints a single-use network token → biometric approval → **Payment Mandate**.
+6. **Closed mandates** *(AP2)* — at pay time the **closed Checkout & Payment Mandates** are signed over the final terms: by the user device key (human-present) or by the agent key under the open mandates (human-not-present).
+7. **Payment** — Google-Pay-style sheet → CP mints a single-use network token → biometric approval (human-present) → **Payment Mandate**.
 8. **`complete_checkout`** — checkout mandate + composite token + signals; merchant → PSP verification chain; order created with permalink.
 9. **Order webhook** — merchant pushes the signed Order object (auto-ships ~8s after purchase, or "Ship now" in the portal).
 

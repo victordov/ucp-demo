@@ -19,7 +19,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateSigningKey, randomId, jwsSignCompact } from "../../../packages/common/src/crypto.ts";
 import { sdJwtIssue, sdJwtPresent } from "../../../packages/common/src/sdjwt.ts";
-import { checkoutUvChallenge } from "../../../packages/common/src/ap2.ts";
+import { issueDelegateRoot } from "../../../packages/common/src/dsdjwt.ts";
+import { checkoutUvChallenge, checkoutJwt, checkoutJwtHash, CHECKOUT_MANDATE_VCT, PAYMENT_MANDATE_VCT } from "../../../packages/common/src/ap2.ts";
 import { mcpHandler, rawBodySaver, RpcError, UCP_ERR } from "../../../packages/common/src/jsonrpc.ts";
 import {
   generateRegistrationOptions,
@@ -54,12 +55,65 @@ const RP_NAME = "Walletly — Credentials Provider";
 // The ceremony can run from any of the app origins on localhost.
 const ORIGINS = [URLS.shoppingAgent, URLS.credentialsProvider, URLS.merchantPortal, URLS.paymentProvider];
 
+/* ---- RP-ID resolution that works on BOTH localhost and public tunnels ----
+ * A passkey is scoped to its RP ID — the effective domain of the page running
+ * the ceremony. On localhost that is "localhost"; behind ngrok / localtunnel it
+ * is the tunnel hostname (which ngrok regenerates every run). So we never hard-
+ * pin one RP ID: the wallet sheet runs the ceremony against its own
+ * location.hostname, and here we re-derive the expected RP ID + origin from the
+ * signed clientDataJSON, trusting it only when the host is allow-listed. */
+const TUNNEL_SUFFIXES = [".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".ngrok.dev", ".ngrok-free.dev", ".loca.lt", ".trycloudflare.com", ".lhr.life", ".serveo.net"];
+const CONFIG_HOSTS = ORIGINS.map((u) => { try { return new URL(u).hostname; } catch { return ""; } }).filter(Boolean);
+const EXTRA_HOSTS = (process.env.RP_ALLOWED_HOSTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+function hostAllowed(host: string): boolean {
+  if (!host) return false;
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost")) return true;
+  if (host === RP_ID || CONFIG_HOSTS.includes(host)) return true;
+  if (EXTRA_HOSTS.some((h) => (h.startsWith(".") ? host.endsWith(h) : host === h))) return true;
+  return TUNNEL_SUFFIXES.some((sfx) => host.endsWith(sfx));
+}
+
+/** Seed RP ID for option generation (the sheet overrides it to its own host). */
+function defaultRpId(hint?: string): string {
+  return hint && hostAllowed(hint) ? hint : RP_ID;
+}
+
+/** Re-derive the expected RP ID + origin + clientData type from a signed
+ *  WebAuthn/SPC response (clientDataJSON is parsed exactly once here). */
+function expectedFrom(resp: any): { rpId: string; origin: string; type?: string } | null {
+  let cd: any;
+  try { cd = JSON.parse(Buffer.from(resp.response.clientDataJSON, "base64url").toString("utf8")); }
+  catch { return null; }
+  let u: URL;
+  try { u = new URL(cd.origin); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (!hostAllowed(u.hostname)) {
+    console.warn(`[credentials] passkey: rejected origin '${cd.origin}' — host not in allow-list (set RP_ALLOWED_HOSTS to permit it)`);
+    return null;
+  }
+  return { rpId: u.hostname, origin: u.origin, type: cd.type };
+}
+
+/** Find the passkey for an RP ID, falling back to the only one enrolled (demo). */
+function passkeyFor(rpId: string): Passkey | undefined {
+  return passkeys.get(rpId) ?? (passkeys.size === 1 ? [...passkeys.values()][0] : undefined);
+}
+
 /** Verify a WebAuthn (or SPC "payment.get") assertion over a checkout's UV challenge. */
 async function verifyCheckoutAssertion(
   webauthn: any,
   expectedChallenge: string
-): Promise<{ ok: boolean; error?: string; spc?: boolean; origin?: string; transport?: string }> {
-  if (!passkey) return { ok: false, error: "no passkey enrolled" };
+): Promise<{ ok: boolean; error?: string; spc?: boolean; origin?: string; transport?: string; credential_id?: string }> {
+  // RP ID + origin are re-derived from the signed response, so verification works
+  // identically whether the ceremony ran on localhost or a public tunnel.
+  sweepChallenges();
+  const exp = expectedFrom(webauthn);
+  const rpId = exp?.rpId ?? RP_ID;
+  // Verification uses an EXACT lookup: a credential is scoped to one RP ID, so a
+  // host mismatch must fail clearly here rather than later on the RP-ID hash.
+  const pk = passkeys.get(rpId);
+  if (!pk) return { ok: false, error: `no passkey enrolled for this host (${rpId})` };
   if (!pendingAuthChallenges.has(expectedChallenge)) {
     // Allow direct binding (challenge is deterministic from the checkout), but record it.
     pendingAuthChallenges.set(expectedChallenge, { ts: Date.now() });
@@ -68,21 +122,16 @@ async function verifyCheckoutAssertion(
     const verification = await verifyAuthenticationResponse({
       response: webauthn,
       expectedChallenge,
-      expectedOrigin: ORIGINS,
-      expectedRPID: RP_ID,
+      expectedOrigin: exp?.origin ?? ORIGINS,
+      expectedRPID: exp?.rpId ?? RP_ID,
       expectedType: ["webauthn.get", "payment.get"], // SPC uses payment.get
       requireUserVerification: true,
-      credential: { id: passkey.id, publicKey: passkey.publicKey, counter: passkey.counter, transports: passkey.transports as any },
+      credential: { id: pk.id, publicKey: pk.publicKey, counter: pk.counter, transports: pk.transports as any },
     });
     if (!verification.verified) return { ok: false, error: "assertion not verified" };
-    passkey.counter = verification.authenticationInfo.newCounter;
+    pk.counter = verification.authenticationInfo.newCounter;
     pendingAuthChallenges.delete(expectedChallenge);
-    const spc = webauthn?.response?.clientDataJSON
-      ? (() => {
-          try { return JSON.parse(Buffer.from(webauthn.response.clientDataJSON, "base64url").toString("utf8")).type === "payment.get"; } catch { return false; }
-        })()
-      : false;
-    return { ok: true, spc, origin: verification.authenticationInfo.origin };
+    return { ok: true, spc: exp?.type === "payment.get", origin: verification.authenticationInfo.origin, credential_id: pk.id };
   } catch (e: any) {
     return { ok: false, error: e.message };
   }
@@ -93,11 +142,21 @@ interface Passkey {
   publicKey: Uint8Array<ArrayBuffer>; // COSE public key
   counter: number;
   transports?: string[];
+  rp_id: string; // the RP ID (effective domain) this credential is scoped to
   enrolled_at: string;
 }
-let passkey: Passkey | null = null; // single demo user
+// Keyed by RP ID, so a localhost credential and a tunnel credential can coexist
+// — switching between `npm run dev` and `npm run dev:ngrok` no longer collides.
+const passkeys = new Map<string, Passkey>();
 const pendingRegChallenges = new Map<string, number>(); // challenge → ts
 const pendingAuthChallenges = new Map<string, { checkout_id?: string; ts: number }>();
+// Cancelled ceremonies never reach the success path, so prune challenges by age
+// instead of leaking an entry per abandoned prompt.
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+function sweepChallenges(now = Date.now()) {
+  for (const [k, ts] of pendingRegChallenges) if (now - ts > CHALLENGE_TTL_MS) pendingRegChallenges.delete(k);
+  for (const [k, v] of pendingAuthChallenges) if (now - v.ts > CHALLENGE_TTL_MS) pendingAuthChallenges.delete(k);
+}
 
 /* ---------------- wallet state ---------------- */
 
@@ -315,7 +374,7 @@ const tools = {
   },
 
   sign_mandate: {
-    description: "Sign an AP2 mandate (Intent/Cart/Payment/Checkout) with the user's device key after trusted-surface approval.",
+    description: "Sign an AP2 mandate (Checkout / Payment, open or closed) with the user's device key after trusted-surface approval.",
     inputSchema: {
       type: "object",
       properties: { kind: { type: "string" }, payload: { type: "object" } },
@@ -324,8 +383,8 @@ const tools = {
     handler: async (args: any, ctx: any) => {
       const kind: string = args?.kind;
       const payload = args?.payload;
-      if (!payload || !["IntentMandate", "CartMandate", "PaymentMandate", "CheckoutMandate"].includes(kind))
-        throw new RpcError(-32600, "kind must be one of IntentMandate|CartMandate|PaymentMandate|CheckoutMandate", UCP_ERR("invalid_request", String(kind)), 400);
+      if (!payload || !["OpenCheckoutMandate", "OpenPaymentMandate", "PaymentMandate", "CheckoutMandate"].includes(kind))
+        throw new RpcError(-32600, "kind must be one of OpenCheckoutMandate|OpenPaymentMandate|PaymentMandate|CheckoutMandate", UCP_ERR("invalid_request", String(kind)), 400);
 
       let jws: string;
       let id: string;
@@ -336,12 +395,25 @@ const tools = {
 
       // --- Spend-control policy enforcement at the signing surface ---
       if (kind === "PaymentMandate") {
-        const merchantId = String(payload.payee ?? "").split("/m/")[1]?.split("/")[0];
-        const pv = checkPolicy({ amount: payload.amount?.amount, merchant_id: merchantId, human_present: payload.human_present, checkout_id: payload.checkout_id });
+        const merchantId = payload.payee?.id ?? String(payload.payee?.website ?? "").split("/m/")[1]?.split("/")[0];
+        const pv = checkPolicy({ amount: payload.payment_amount?.amount, merchant_id: merchantId, human_present: payload.human_present, checkout_id: payload.checkout_id });
         if (!pv.ok) {
           log("policy.block", `PaymentMandate refused (${pv.code}): ${pv.detail}`);
           throw new RpcError(-32000, "Refused by agent spend policy", UCP_ERR(pv.code, pv.detail), 403);
         }
+      }
+
+      // --- Open mandates: the ROOT hop of a dSD-JWT chain, issuer-signed by the
+      //     user device key. Constraint-array elements (allowed / acceptable_items)
+      //     are selective disclosures; `cnf.jwk` (in the payload) names the agent
+      //     key authorized to sign the closed (terminal) hop. ---
+      if (kind === "OpenCheckoutMandate" || kind === "OpenPaymentMandate") {
+        const sdKeys = kind === "OpenCheckoutMandate" ? ["allowed", "acceptable_items"] : ["allowed"];
+        const root = issueDelegateRoot(payload, sdKeys, userDeviceKey);
+        const rid = payload.id ?? randomId(kind.toLowerCase());
+        mandateLog.push({ kind, id: rid, jws: root.segment, format: "dc+sd-jwt (root)", signed_at: new Date().toISOString(), approved_via: approvedVia, passkey_evidence: undefined, summary: { type: kind, vct: payload.vct, constraints: Array.isArray(payload.constraints) ? payload.constraints.length : 0 } });
+        log("sign_mandate", `${kind} ${rid} signed (dSD-JWT root) — user device key`);
+        return { segment: root.segment, sdJwt: root.sdJwt, kid: userDeviceKey.kid, kind, id: rid, format: "dc+sd-jwt (root)", approved_via: approvedVia };
       }
 
       if (kind === "CheckoutMandate") {
@@ -352,7 +424,7 @@ const tools = {
           throw new RpcError(-32600, "CheckoutMandate requires aud (merchant profile) + nonce (checkout id)", UCP_ERR("invalid_request", "aud/nonce"), 400);
 
         // --- User Verification: real passkey (Touch ID) when one is enrolled ---
-        if (PASSKEYS_ENABLED && passkey) {
+        if (PASSKEYS_ENABLED && passkeys.size > 0) {
           if (!args.webauthn)
             throw new RpcError(-32000, "User verification required", UCP_ERR("user_verification_required", "a passkey is enrolled — a Touch ID assertion is required to authorize this checkout"), 401);
           const expectedChallenge = checkoutUvChallenge(payload.checkout);
@@ -360,17 +432,25 @@ const tools = {
           if (!v.ok)
             throw new RpcError(-32000, "Passkey verification failed", UCP_ERR("user_verification_failed", v.error ?? "assertion invalid"), 401);
           approvedVia = `passkey · ${v.transport ?? "platform"} · Touch ID (UV verified, challenge bound to checkout terms)`;
-          passkeyEvidence = { type: v.spc ? "spc" : "webauthn", credential_id: passkey.id, uv: true, challenge: expectedChallenge, origin: v.origin };
+          passkeyEvidence = { type: v.spc ? "spc" : "webauthn", credential_id: v.credential_id, uv: true, challenge: expectedChallenge, origin: v.origin };
           log("passkey.verify", `checkout ${payload.checkout?.id} approved via passkey (UV=1, ${passkeyEvidence.type})`);
         }
+        // AP2 checkout_mandate.json requires checkout_jwt (merchant-signed JWT of
+        // the Checkout) + checkout_hash. Derived from the checkout's UCP
+        // merchant_authorization so the same merchant signature verifies.
+        const cpCheckoutJwt = checkoutJwt(payload.checkout);
         const { sdjwt } = sdJwtIssue({
           claims: {
+            vct: CHECKOUT_MANDATE_VCT,
             iss: CREDENTIALS_PROFILE_URL,
             iat: Math.floor(Date.now() / 1000),
             // exp_override (seconds) lets demos issue an already-expired mandate.
             exp: Math.floor(Date.now() / 1000) + (payload.exp_override ?? 30 * 60),
-            cart_mandate_id: payload.cart_mandate_id,
-            intent_mandate_id: payload.intent_mandate_id,
+            checkout_jwt: cpCheckoutJwt,
+            checkout_hash: checkoutJwtHash(cpCheckoutJwt),
+            // Human-not-present: digest of the user-signed open Checkout Mandate
+            // this closed mandate satisfies (absent in the direct flow).
+            open_checkout_mandate: payload.open_checkout_mandate,
             human_present: payload.human_present !== false,
             checkout: payload.checkout,
           },
@@ -389,8 +469,50 @@ const tools = {
         });
         id = randomId("comandate");
         format = "dc+sd-jwt~kb";
+      } else if (kind === "PaymentMandate") {
+        // Real SD-JWT+kb closed Payment Mandate (AP2 mandate.payment.1): issued
+        // by the CP service key, KEY-BOUND to the user device key, audience =
+        // merchant profile (payee), nonce = checkout id. payment_instrument is
+        // selectively disclosable.
+        const aud = payload.payee?.website;
+        const nonce = payload.checkout_id;
+        if (!aud || !nonce)
+          throw new RpcError(-32600, "PaymentMandate requires payee.website (aud) + checkout_id (nonce)", UCP_ERR("invalid_request", "payee.website/checkout_id"), 400);
+        const now = Math.floor(Date.now() / 1000);
+        const { sdjwt } = sdJwtIssue({
+          claims: {
+            vct: PAYMENT_MANDATE_VCT,
+            iss: CREDENTIALS_PROFILE_URL,
+            iat: payload.iat ?? now,
+            // exp_override (seconds) lets demos issue an already-expired mandate.
+            exp: payload.exp ?? now + (payload.exp_override ?? 15 * 60),
+            type: "PaymentMandate",
+            id: payload.id,
+            transaction_id: payload.transaction_id,
+            payee: payload.payee,
+            payment_amount: payload.payment_amount,
+            open_payment_mandate: payload.open_payment_mandate,
+            checkout_id: payload.checkout_id,
+            handler: payload.handler,
+            agent: payload.agent,
+            rail: payload.rail,
+            authorized_by: payload.authorized_by,
+            human_present: payload.human_present !== false,
+            issued_at: payload.issued_at,
+            expires_at: payload.expires_at,
+          },
+          disclosable: { payment_instrument: payload.payment_instrument },
+          issuerKey: serviceKey,
+          holderJwk: userDeviceKey.publicJwk,
+        });
+        jws = sdJwtPresent({ sdjwt, revealNames: ["payment_instrument"], holderKey: userDeviceKey, aud, nonce });
+        id = payload.id ?? randomId("pay");
+        format = "dc+sd-jwt~kb";
       } else {
-        jws = jwsSignCompact(payload, userDeviceKey, "ap2-mandate+jwt");
+        // Open Checkout / Open Payment Mandate: user-signed (device key) compact
+        // JWS. The full payload (vct, constraints[], cnf=agent key, iat, exp) is
+        // built by the Shopping Agent; the CP attests it with the user's key.
+        jws = jwsSignCompact(payload, userDeviceKey, "ap2-open-mandate+jwt");
         id = payload.id ?? randomId(kind.toLowerCase());
       }
       const rec: SignedMandateRecord = {
@@ -404,11 +526,13 @@ const tools = {
         summary:
           kind === "CheckoutMandate"
             ? { checkout_id: payload.checkout?.id, total: payload.checkout?.totals?.find((t: any) => t.type === "total")?.amount, format }
-            : { ...payload.constraints, ...payload.amount, type: kind },
+            : kind === "PaymentMandate"
+              ? { type: kind, ...(payload.payment_amount ?? {}) }
+              : { type: kind, vct: payload.vct, constraints: Array.isArray(payload.constraints) ? payload.constraints.length : 0 },
       };
       mandateLog.push(rec);
       log("sign_mandate", `${kind} ${id} signed (${format}) — ${approvedVia.split(" ")[0]}`);
-      return { jws, kid: kind === "CheckoutMandate" ? serviceKey.kid : userDeviceKey.kid, kind, id, format, approved_via: approvedVia, passkey_evidence: passkeyEvidence };
+      return { jws, kid: kind === "CheckoutMandate" || kind === "PaymentMandate" ? serviceKey.kid : userDeviceKey.kid, kind, id, format, approved_via: approvedVia, passkey_evidence: passkeyEvidence };
     },
   },
 
@@ -457,49 +581,65 @@ const tools = {
 
   /* ---------------- passkeys (WebAuthn / SPC) ---------------- */
   passkey_status: {
-    description: "Whether passkey user-verification is enabled and whether the user has enrolled one.",
-    inputSchema: { type: "object", properties: {} },
-    handler: async () => ({
-      enabled: PASSKEYS_ENABLED,
-      enrolled: !!passkey,
-      rp_id: RP_ID,
-      credential_id: passkey?.id ?? null,
-      user: { id: USER.id, name: USER.name },
-    }),
+    description: "Whether passkey user-verification is enabled and whether the user has enrolled one for the RP ID / host in use.",
+    inputSchema: { type: "object", properties: { rp_id: { type: "string" } } },
+    handler: async (args: any) => {
+      const rpId = defaultRpId(args?.rp_id);
+      const pk = passkeyFor(rpId);
+      return {
+        enabled: PASSKEYS_ENABLED,
+        enrolled: !!pk,
+        rp_id: pk?.rp_id ?? rpId,
+        credential_id: pk?.id ?? null,
+        user: { id: USER.id, name: USER.name },
+      };
+    },
   },
   passkey_register_options: {
-    description: "Get WebAuthn registration options to enrol a passkey (navigator.credentials.create).",
-    inputSchema: { type: "object", properties: {} },
-    handler: async () => {
+    description: "Get WebAuthn registration options to enrol a passkey (navigator.credentials.create), steered to the platform authenticator (macOS Touch ID).",
+    inputSchema: { type: "object", properties: { rp_id: { type: "string" } } },
+    handler: async (args: any) => {
+      sweepChallenges();
       const options = await generateRegistrationOptions({
         rpName: RP_NAME,
-        rpID: RP_ID,
+        rpID: defaultRpId(args?.rp_id),
         userName: USER.email,
         userDisplayName: USER.name,
         attestationType: "none",
-        authenticatorSelection: { residentKey: "preferred", userVerification: "required", authenticatorAttachment: "platform" },
+        authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+        // "localDevice" emits hints:["client-device"] AND authenticatorAttachment:
+        // "platform" — telling the browser to enrol the BUILT-IN platform
+        // authenticator (Touch ID) and not hand the ceremony to a password-manager
+        // extension (e.g. LastPass), which otherwise auto-grabs it on https origins.
+        preferredAuthenticatorType: "localDevice",
         supportedAlgorithmIDs: [-7, -257],
       });
       pendingRegChallenges.set(options.challenge, Date.now());
-      log("passkey.register_options", "issued registration challenge");
+      log("passkey.register_options", `issued registration challenge (rp=${options.rp.id})`);
       return { options };
     },
   },
   passkey_register: {
-    description: "Verify a WebAuthn registration response and enrol the user's passkey.",
-    inputSchema: { type: "object", properties: { response: { type: "object" }, challenge: { type: "string" } }, required: ["response"] },
+    description: "Verify a WebAuthn registration response and enrol the user's passkey (scoped to the host the ceremony ran on).",
+    inputSchema: { type: "object", properties: { response: { type: "object" }, challenge: { type: "string" }, rp_id: { type: "string" } }, required: ["response"] },
     handler: async (args: any) => {
+      sweepChallenges();
+      // Require the EXACT challenge this response was issued for — no "use the last
+      // one" fallback (that weakened the binding and broke concurrent enrolments).
       const challenge = args?.challenge ?? args?.response?.response?.challenge;
-      // Find a recent pending challenge (single demo user).
-      const expectedChallenge = challenge && pendingRegChallenges.has(challenge) ? challenge : [...pendingRegChallenges.keys()].pop();
-      if (!expectedChallenge) throw new RpcError(-32000, "No pending registration challenge", UCP_ERR("invalid_request", "call passkey_register_options first"), 400);
+      if (!challenge || !pendingRegChallenges.has(challenge))
+        throw new RpcError(-32000, "No matching registration challenge", UCP_ERR("invalid_request", "call passkey_register_options first — the challenge is unknown, expired, or already used"), 400);
+      const expectedChallenge = challenge;
+      // RP ID + origin come from the signed response → works on localhost & tunnels.
+      const exp = expectedFrom(args.response);
+      const rpId = exp?.rpId ?? defaultRpId(args?.rp_id);
       let verification;
       try {
         verification = await verifyRegistrationResponse({
           response: args.response,
           expectedChallenge,
-          expectedOrigin: ORIGINS,
-          expectedRPID: RP_ID,
+          expectedOrigin: exp?.origin ?? ORIGINS,
+          expectedRPID: rpId,
           requireUserVerification: true,
         });
       } catch (e: any) {
@@ -508,39 +648,49 @@ const tools = {
       pendingRegChallenges.delete(expectedChallenge);
       if (!verification.verified || !verification.registrationInfo) throw new RpcError(-32000, "Registration not verified", UCP_ERR("registration_failed", "unverified"), 400);
       const info = verification.registrationInfo;
-      passkey = {
+      const pk: Passkey = {
         id: info.credential.id,
         publicKey: info.credential.publicKey,
         counter: info.credential.counter,
         transports: args.response?.response?.transports,
+        rp_id: rpId,
         enrolled_at: new Date().toISOString(),
       };
-      log("passkey.register", `enrolled passkey ${passkey.id.slice(0, 14)}… (UV=${verification.registrationInfo.userVerified})`);
-      return { enrolled: true, credential_id: passkey.id };
+      passkeys.set(rpId, pk);
+      log("passkey.register", `enrolled passkey ${pk.id.slice(0, 14)}… for rp=${rpId} (UV=${verification.registrationInfo.userVerified})`);
+      return { enrolled: true, credential_id: pk.id, rp_id: rpId };
     },
   },
   /** Provide the get() parameters for a checkout: challenge bound to its terms + allowed credential. */
   passkey_auth_options: {
-    description: "Get WebAuthn/SPC parameters to authorize a checkout (challenge bound to the checkout terms + allowCredentials).",
-    inputSchema: { type: "object", properties: { uv_challenge: { type: "string" }, checkout_id: { type: "string" } }, required: ["uv_challenge"] },
+    description: "Get WebAuthn/SPC parameters to authorize a checkout (challenge bound to the checkout terms + allowCredentials), steered to the platform authenticator (macOS Touch ID).",
+    inputSchema: { type: "object", properties: { uv_challenge: { type: "string" }, checkout_id: { type: "string" }, rp_id: { type: "string" } }, required: ["uv_challenge"] },
     handler: async (args: any) => {
-      if (!passkey) throw new RpcError(-32000, "No passkey enrolled", UCP_ERR("not_enrolled", "enrol a passkey first"), 400);
+      sweepChallenges();
+      const rpId = defaultRpId(args?.rp_id);
+      // Exact lookup — allowCredentials must reference a credential scoped to THIS
+      // host, otherwise the authenticator surfaces nothing for the user.
+      const pk = passkeys.get(rpId);
+      if (!pk) throw new RpcError(-32000, "No passkey enrolled for this host", UCP_ERR("not_enrolled", `enrol a passkey on ${rpId} first`), 400);
       pendingAuthChallenges.set(args.uv_challenge, { checkout_id: args.checkout_id, ts: Date.now() });
       // Build a standard PublicKeyCredentialRequestOptionsJSON whose challenge is
       // the checkout's UV challenge (raw hash bytes → base64url == uv_challenge).
       const optionsJSON = await generateAuthenticationOptions({
-        rpID: RP_ID,
+        rpID: pk.rp_id,
         challenge: new Uint8Array(b64u.decode(args.uv_challenge)),
-        allowCredentials: [{ id: passkey.id, transports: passkey.transports as any }],
+        allowCredentials: [{ id: pk.id, transports: pk.transports as any }],
         userVerification: "required",
       });
+      // hints:["client-device"] keeps the get() ceremony on the built-in platform
+      // authenticator (Touch ID) rather than a password-manager extension (LastPass).
+      optionsJSON.hints = ["client-device"];
       const m = methods.find((x) => x.default);
       return {
-        rp_id: RP_ID,
+        rp_id: pk.rp_id,
         uv_challenge: args.uv_challenge,
         options: optionsJSON, // for @simplewebauthn/browser startAuthentication
         // SPC payment display (Chrome native sheet): amount + instrument
-        payment: { credential_id: passkey.id, last4: m?.last4, network: m?.network },
+        payment: { credential_id: pk.id, last4: m?.last4, network: m?.network },
       };
     },
   },
@@ -648,7 +798,7 @@ app.get("/.well-known/ucp", (_req, res) => {
         // Spend controls & programmable payment: per-agent consent policy
         // (caps, budget, allowlist, autonomy) enforced at mint + sign.
         "org.ap2.credentials.spend_policy": [
-          { version: UCP_VERSION, spec: "https://ap2-protocol.org/specification", schema: "https://ap2-protocol.org/specification#intent-mandate" },
+          { version: UCP_VERSION, spec: "https://ap2-protocol.org/specification", schema: "https://ap2-protocol.org/specification#autonomous-human-not-present" },
         ],
       },
       payment_handlers: {
@@ -729,10 +879,16 @@ app.post("/api/wallet/approval", (req, res) => {
   res.json({ approval: a });
 });
 
-// Passkey management: the user can remove the enrolled passkey.
-app.post("/api/wallet/passkey/remove", (_req, res) => {
-  if (passkey) log("passkey.removed", `credential ${passkey.id.slice(0, 14)}… removed by the user`);
-  passkey = null;
+// Passkey management: the user can remove an enrolled passkey (one host, or all).
+app.post("/api/wallet/passkey/remove", (req, res) => {
+  const rpId = req.body?.rp_id;
+  if (rpId && passkeys.has(rpId)) {
+    log("passkey.removed", `credential for rp=${rpId} removed by the user`);
+    passkeys.delete(rpId);
+  } else {
+    if (passkeys.size) log("passkey.removed", `${passkeys.size} passkey(s) removed by the user`);
+    passkeys.clear();
+  }
   res.json({ ok: true });
 });
 
@@ -749,7 +905,7 @@ app.get("/api/wallet/state", (_req, res) => {
   res.json({
     user: USER,
     keys: { service: serviceKey.publicJwk, user_device: userDeviceKey.publicJwk },
-    passkey: { enabled: PASSKEYS_ENABLED, enrolled: !!passkey, rp_id: RP_ID, credential_id: passkey?.id ?? null, enrolled_at: passkey?.enrolled_at },
+    passkey: { enabled: PASSKEYS_ENABLED, enrolled: passkeys.size > 0, rp_id: RP_ID, enrolled_rp_ids: [...passkeys.keys()], credential_id: [...passkeys.values()][0]?.id ?? null, enrolled_at: [...passkeys.values()][0]?.enrolled_at },
     policy: agentPolicy,
     policy_audit: policyAudit.slice().reverse(),
     approvals: [...approvals.values()].reverse(),

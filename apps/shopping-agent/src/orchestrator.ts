@@ -16,7 +16,26 @@
 import { randomId, generateSigningKey, sha256, b64u, type SigningKey } from "../../../packages/common/src/crypto.ts";
 import { callTool, fetchUcpProfile } from "../../../packages/common/src/jsonrpc.ts";
 import { verifyResponse } from "../../../packages/common/src/httpsig.ts";
-import { verifyMerchantAuthorization, checkoutUvChallenge } from "../../../packages/common/src/ap2.ts";
+import {
+  verifyMerchantAuthorization,
+  checkoutUvChallenge,
+  checkoutHash,
+  checkoutJwt,
+  checkoutJwtHash,
+  openMandateDigest,
+  allowedMerchantsConstraint,
+  lineItemsConstraint,
+  amountRangeConstraint,
+  budgetConstraint,
+  agentRecurrenceConstraint,
+  allowedPaymentInstrumentsConstraint,
+  paymentReferenceConstraint,
+  OPEN_CHECKOUT_MANDATE_VCT,
+  OPEN_PAYMENT_MANDATE_VCT,
+} from "../../../packages/common/src/ap2.ts";
+import { issueDelegateTerminal, joinChain } from "../../../packages/common/src/dsdjwt.ts";
+import { intersectCapabilities, asCapabilityMap, pruneInvalidNamespaces } from "../../../packages/common/src/negotiation.ts";
+import { resolveComposedCheckoutSchema } from "./schema-resolver.ts";
 import { otelEnabled, otelSpan } from "../../../packages/common/src/otel.ts";
 import {
   URLS,
@@ -27,9 +46,11 @@ import {
   UCP_VERSION,
   type Checkout,
   type TraceEvent,
-  type IntentMandatePayload,
-  type CartMandatePayload,
+  type OpenCheckoutMandatePayload,
+  type OpenPaymentMandatePayload,
   type PaymentMandatePayload,
+  type Ap2Merchant,
+  type Ap2PaymentInstrument,
   type PostalAddress,
 } from "../../../packages/common/src/types.ts";
 import { parseIntent, type ParsedIntent } from "./nlu.ts";
@@ -92,15 +113,23 @@ export interface Session {
   listeners: Set<(ev: TraceEvent) => void>;
   address: typeof DEFAULT_ADDRESS;
   constraints?: ParsedIntent;
-  intentMandate?: { id: string; jws: string; payload: IntentMandatePayload };
+  /** Human-not-present authorization (user-signed, cnf=agent). Absent in the
+   *  direct/human-present flow, where the user approves the closed mandates. */
+  // Human-not-present open mandates are the ROOT hop of a dSD-JWT chain: we keep
+  // the root's chain `segment` + standalone `sdJwt` (for the closed hop's sd_hash).
+  openCheckoutMandate?: { id: string; segment: string; sdJwt: string; payload: OpenCheckoutMandatePayload };
+  openPaymentMandate?: { id: string; segment: string; sdJwt: string; payload: OpenPaymentMandatePayload };
+  occurrence?: number; // closed-mandate count under the open Payment Mandate (agent_recurrence)
+  recurring?: boolean; // standing-intent scenario: add a payment.agent_recurrence constraint
   merchants: Record<string, { id: string; name: string; domain: string; rating: number; color?: string; short?: string }>;
   merchantEndpoints: Record<string, string>; // resolved from ucp.services
   eligible: string[];
+  /** Negotiated active capabilities per business (capability intersection). */
+  negotiated?: Record<string, string[]>;
   products: MergedProduct[];
   accessory?: any;
   selection?: { merchantId: string; items: { item_id: string; quantity: number }[] };
   checkout?: Checkout;
-  cartMandate?: { id: string; jws: string; payload: CartMandatePayload };
   instrument?: any;
   paymentMethod?: any;
   rail?: "card_network" | "rtp"; // multi-rail settlement: selected rail
@@ -194,8 +223,8 @@ export function evidenceBundle(s: Session) {
     session_id: s.id,
     audit_chain: verifyAuditChain(s),
     mandates: {
-      intent: s.intentMandate ? { id: s.intentMandate.id, jws: s.intentMandate.jws } : undefined,
-      cart: s.cartMandate ? { id: s.cartMandate.id, jws: s.cartMandate.jws } : undefined,
+      open_checkout: s.openCheckoutMandate ? { id: s.openCheckoutMandate.id, sd_jwt: s.openCheckoutMandate.segment } : undefined,
+      open_payment: s.openPaymentMandate ? { id: s.openPaymentMandate.id, sd_jwt: s.openPaymentMandate.segment } : undefined,
       payment: s.paymentMandate ? { id: s.paymentMandate.id, jws: s.paymentMandate.jws } : undefined,
       checkout_sd_jwt: s.checkoutMandateJws,
     },
@@ -246,38 +275,27 @@ function truncate(v: string | undefined, n: number) {
 }
 
 const money = (cents: number) => "$" + (cents / 100).toFixed(2);
-const totalOf = (co: Checkout) => co.totals.find((t) => t.type === "total")?.amount ?? 0;
+export const totalOf = (co: Checkout) => co.totals.find((t) => t.type === "total")?.amount ?? 0;
 
 /* ================================================================== */
-/* 1. Intent → discovery → negotiation → intent mandate → search       */
+/* 1. Request → discovery → capability negotiation → federated search  */
 /* ================================================================== */
 
-/** Capability intersection per the spec's algorithm. */
+/** Capability intersection per the spec's algorithm (shared implementation:
+ *  name match → highest mutual version → transitive orphan-extension pruning). */
 function intersect(businessCaps: Record<string, any[]>): string[] {
-  // 1+2: same name with a mutual version
-  let active = Object.entries(businessCaps)
-    .filter(([name, decls]) => {
-      const mine = PLATFORM_CAPS[name];
-      return mine && decls.some((d: any) => d.version === mine.version);
-    })
-    .map(([name]) => name);
-  // 3+4: prune orphaned extensions until stable
-  let changed = true;
-  while (changed) {
-    changed = false;
-    active = active.filter((name) => {
-      const ext = businessCaps[name]?.[0]?.extends;
-      if (!ext) return true;
-      const parents = Array.isArray(ext) ? ext : [ext];
-      const ok = parents.some((p: string) => active.includes(p));
-      if (!ok) changed = true;
-      return ok;
-    });
-  }
-  return active;
+  return intersectCapabilities(asCapabilityMap(PLATFORM_CAPS as any), businessCaps as any).active;
 }
 
-export async function runIntent(s: Session, text: string) {
+/** Set the session modality. Must be called BEFORE runIntent for human-not-present
+ *  so the user-signed open mandates are minted up front. */
+export function setModality(s: Session, humanPresent: boolean) {
+  s.humanPresent = humanPresent;
+  return { human_present: humanPresent };
+}
+
+export async function runIntent(s: Session, text: string, opts: { humanPresent?: boolean; deferOpenMandates?: boolean } = {}) {
+  if (opts.humanPresent !== undefined) s.humanPresent = opts.humanPresent;
   const constraints = await parseIntent(text);
   s.constraints = constraints;
 
@@ -310,11 +328,35 @@ export async function runIntent(s: Session, text: string) {
     ),
   });
 
-  // --- Negotiation: spec intersection algorithm ---
-  const intersection: Record<string, string[]> = {};
+  // --- Namespace validation: the spec/schema URL origin of every business
+  //     capability MUST match its reverse-domain namespace authority
+  //     (dev.ucp.* → https://ucp.dev). Offending capabilities are rejected. ---
+  const cleanCaps: Record<string, Record<string, any[]>> = {};
+  const nsViolations: Record<string, any[]> = {};
   for (const [mid, p] of Object.entries(profiles)) {
-    intersection[mid] = intersect((p as any).ucp?.capabilities ?? {});
+    const { clean, violations } = pruneInvalidNamespaces(((p as any).ucp?.capabilities ?? {}) as any);
+    cleanCaps[mid] = clean as any;
+    if (violations.length) nsViolations[mid] = violations;
   }
+  emit(s, {
+    layer: "UCP",
+    kind: "verify",
+    tag: "UCP",
+    name: "Namespace Validation",
+    method: "spec/schema origin == reverse-domain authority",
+    desc: "Each business capability's spec & schema URLs MUST originate from the namespace authority (dev.ucp.* → https://ucp.dev). Capabilities that fail this binding are rejected before negotiation.",
+    payload: {
+      checked: Object.fromEntries(Object.entries(profiles).map(([k, p]: [string, any]) => [k, Object.keys(p.ucp?.capabilities ?? {})])),
+      violations: Object.keys(nsViolations).length ? nsViolations : "none",
+    },
+  });
+
+  // --- Negotiation: spec intersection algorithm (over namespace-validated caps) ---
+  const intersection: Record<string, string[]> = {};
+  for (const [mid] of Object.entries(profiles)) {
+    intersection[mid] = intersect(cleanCaps[mid] ?? {});
+  }
+  s.negotiated = intersection;
   s.eligible = Object.entries(intersection)
     .filter(([, caps]) => caps.includes("dev.ucp.shopping.checkout") && caps.includes("dev.ucp.shopping.ap2_mandate"))
     .map(([mid]) => mid);
@@ -322,56 +364,38 @@ export async function runIntent(s: Session, text: string) {
     layer: "UCP",
     kind: "response",
     name: "Capability Negotiation",
-    method: "intersection() — name + mutual version, orphan pruning",
+    method: "intersection() — name + highest mutual version, transitive orphan pruning",
     desc: "Intersection of the platform profile with each business profile per the spec algorithm. dev.ucp.shopping.ap2_mandate is in every intersection, so all sessions are security-locked: signed checkouts + mandatory mandates.",
     payload: { platform: Object.keys(PLATFORM_CAPS), intersection, eligible_businesses: s.eligible.map((m) => profiles[m].name), security_locked: true },
   });
 
-  // --- AP2 Intent Mandate: signed by the user's device key at the CP ---
-  const im: IntentMandatePayload = {
-    type: "IntentMandate",
-    id: randomId("intent"),
-    issued_to: AGENT_PROFILE_URL,
-    user: "user_alex",
-    constraints: {
-      category: constraints.category,
-      required_features: constraints.required_features,
-      // The user's stated budget is an ITEM budget; the signed purchase ceiling
-      // adds headroom for tax, shipping, and small add-ons (+20% + $20). The
-      // merchant AND the PSP enforce this ceiling on the basket total.
-      max_total: constraints.max_total != null ? { amount: Math.round(constraints.max_total * 100 * 1.2) + 2000, currency: "USD" } : undefined,
-      delivery_by_days: constraints.delivery_days,
-      query: constraints.query,
-    },
-    human_present: s.humanPresent !== false,
-    prompt_playback: text,
-    issued_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-  };
-  const signed = await callTool<any>(CP_MCP, "sign_mandate", { kind: "IntentMandate", payload: im }, identity);
-  s.intentMandate = { id: im.id, jws: signed.jws, payload: im };
-  emit(s, {
-    layer: "AP2",
-    kind: "mandate",
-    name: "Intent Mandate",
-    method: "JWS · ES256 · user device key",
-    desc: "Your shopping constraints captured as a user-signed Intent Mandate — the cryptographic boundary the agent must shop within. Signed by the device key held at the Credentials Provider (kid=" + signed.kid + "). Amounts are minor units per UCP.",
-    payload: im,
-    mandate: {
-      kind: "Intent Mandate",
-      id: im.id,
-      seal: "user · device key",
-      rows: [
-        ["category", im.constraints.category ?? "—"],
-        ["features", im.constraints.required_features?.join(", ") || "—"],
-        ["max_total", im.constraints.max_total ? money(im.constraints.max_total.amount) + " USD" : "—"],
-        ["delivery_by", im.constraints.delivery_by_days ? `≤ ${im.constraints.delivery_by_days} days` : "—"],
-        ["human_present", "true"],
-      ],
-      sig: signed.jws.split(".")[2]?.slice(0, 42) ?? "",
-    },
-    _auto: true,
-  });
+  // --- Schema Resolution (spec Resolution Flow): fetch base + active extension
+  //     schemas, compose via allOf ($defs[dev.ucp.shopping.checkout]) before
+  //     making requests. Validation runs against this composed schema. ---
+  try {
+    const sample = s.eligible[0];
+    if (sample) {
+      const r = resolveComposedCheckoutSchema(intersection[sample]);
+      emit(s, {
+        layer: "UCP",
+        kind: "verify",
+        tag: "UCP",
+        name: "Schema Resolution",
+        method: "fetch + compose (allOf) · ajv 2020-12",
+        desc: "Per the spec Resolution Flow, the platform fetches the base checkout schema and each active extension's $defs[dev.ucp.shopping.checkout], composes them via allOf, and validates payloads against the composed schema.",
+        payload: { negotiated: intersection[sample], composed_chain: r.chain, vendored_schemas_loaded: r.loaded },
+      });
+    }
+  } catch (e: any) {
+    emit(s, { layer: "UCP", kind: "verify", tag: "UCP", name: "Schema Resolution (skipped)", method: "", desc: "Schema composition unavailable in this environment.", payload: { error: e.message } });
+  }
+
+  // --- AP2 authorization (v0.2 open/closed model) is created AFTER the
+  //     federated search below. In the human-not-present flow the user signs an
+  //     Open Checkout Mandate + Open Payment Mandate (constraints derived from
+  //     the search results + budget, sender-constrained to the agent via `cnf`).
+  //     In the direct (human-present) flow no open mandate is needed — the user
+  //     approves the closed Checkout & Payment Mandates directly at pay time. ---
 
   // --- Federated catalog search (search_catalog tool) across eligible merchants ---
   const filters = {
@@ -418,16 +442,25 @@ export async function runIntent(s: Session, text: string) {
     s.products[0].recommended = true;
     s.products[0].recReason = "Best match — hits every constraint";
   }
+
+  // --- AP2 open mandates (human-not-present only): the user authorizes the
+  //     autonomous purchase up front via Open Checkout + Open Payment Mandates.
+  //     Deferred when the UI gathers the merchant/payment constraints first
+  //     (interactive authorize step) — they're signed in authorizeAndRun. ---
+  if (s.humanPresent === false && !opts.deferOpenMandates) {
+    await issueOpenMandates(s, constraints);
+  }
+
   emit(s, {
     layer: "UCP",
     kind: "request",
     name: "Catalog Search · Federated",
     method: `tools/call search_catalog × ${s.eligible.length}`,
-    desc: "One signed search_catalog call fans out to every eligible merchant. Results are filtered against the Intent Mandate constraints server-side and merged into per-product offers.",
+    desc: "One signed search_catalog call fans out to every eligible merchant. Results are filtered against the user's stated constraints server-side and merged into per-product offers.",
     payload: {
       query: constraints.query,
       filters,
-      bound_to: s.intentMandate.id,
+      bound_to: s.openCheckoutMandate?.id ?? "human-present (no open mandate)",
       merchants_queried: s.eligible.length,
       results: Object.fromEntries(Object.entries(results).map(([k, r]: [string, any]) => [k, r.products.map((p: any) => `${p.name} @ ${money(p.price)}`)])),
     },
@@ -438,9 +471,114 @@ export async function runIntent(s: Session, text: string) {
     products: s.products.map(uiProduct),
     merchants: s.merchants,
     merchantsQueried: s.eligible.length,
-    intentMandateId: s.intentMandate.id,
+    openCheckoutMandateId: s.openCheckoutMandate?.id,
     engine: constraints.engine,
   };
+}
+
+/**
+ * Issue the user-signed Open Checkout + Open Payment Mandates for an autonomous
+ * (human-not-present) session. Constraints are derived from the federated search
+ * results (allowed merchants + acceptable SKUs) and the user's budget. Each is
+ * sender-constrained to the agent key (`cnf`); the agent later signs the matching
+ * closed mandates and presents both to the verifiers.
+ */
+async function issueOpenMandates(
+  s: Session,
+  constraints: ParsedIntent,
+  opts: { allowedMerchantIds?: string[]; instrument?: Ap2PaymentInstrument } = {}
+) {
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + 30 * 60;
+  // allowed_merchants = the merchants the user authorized (chosen in the
+  // interactive setup), defaulting to all eligible.
+  const merchantIds = opts.allowedMerchantIds?.length ? opts.allowedMerchantIds : s.eligible;
+  const eligibleMerchants: Ap2Merchant[] = merchantIds.map((mid) => ({
+    id: mid,
+    name: s.merchants[mid]?.name ?? mid,
+    website: merchantProfileUrl(mid),
+  }));
+  const acceptable = s.products.slice(0, 8).map((p) => ({ id: p.id, title: p.name }));
+
+  const openCheckout: OpenCheckoutMandatePayload = {
+    vct: OPEN_CHECKOUT_MANDATE_VCT,
+    id: randomId("ocm"),
+    user: "user_alex",
+    constraints: [
+      allowedMerchantsConstraint(eligibleMerchants),
+      lineItemsConstraint([{ id: "line_1", acceptable_items: acceptable, quantity: 1 }]),
+    ],
+    cnf: { jwk: agentKey.publicJwk },
+    iat: now,
+    exp,
+  };
+  const ocSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "OpenCheckoutMandate", payload: openCheckout }, identity);
+  s.openCheckoutMandate = { id: openCheckout.id, segment: ocSigned.segment, sdJwt: ocSigned.sdJwt, payload: openCheckout };
+
+  // amount_range.max caps a single charge (minor units) and reflects EXACTLY
+  // what the user asked: their stated budget, or a "buy if it drops below $X"
+  // conditional cap. We do NOT silently inflate it — the agent must shop within
+  // the user's number (the order TOTAL, incl. tax, must be ≤ this cap). For
+  // recurring authorizations the AP2 spec requires agent_recurrence to be paired
+  // with BOTH amount_range AND budget; budget.max is in MAJOR units and bounds
+  // the cumulative spend across cycles.
+  const conditionalCap = constraints.buy_below != null ? Math.round(constraints.buy_below * 100) : undefined;
+  const ceiling = constraints.max_total != null ? Math.round(constraints.max_total * 100) : undefined;
+  const singleCap = conditionalCap ?? ceiling;
+  const recurringCap = singleCap ?? 50000; // ensure amount_range is present when recurring
+  const openCheckoutRef = openMandateDigest(ocSigned.sdJwt); // payment.reference → open checkout
+  const paymentConstraints = s.recurring
+    ? [
+        amountRangeConstraint("USD", recurringCap),
+        budgetConstraint((recurringCap * 2) / 100, "USD"), // 2 cycles, major units
+        agentRecurrenceConstraint("ON_DEMAND", 2),
+        paymentReferenceConstraint(openCheckoutRef),
+      ]
+    : [
+        ...(singleCap != null ? [amountRangeConstraint("USD", singleCap)] : []),
+        paymentReferenceConstraint(openCheckoutRef),
+      ];
+  // The chosen payment method becomes a signed allowed_payment_instruments
+  // constraint — the PSP rejects any other instrument.
+  if (opts.instrument) paymentConstraints.push(allowedPaymentInstrumentsConstraint([opts.instrument]));
+  const openPayment: OpenPaymentMandatePayload = {
+    vct: OPEN_PAYMENT_MANDATE_VCT,
+    id: randomId("opm"),
+    user: "user_alex",
+    constraints: paymentConstraints,
+    cnf: { jwk: agentKey.publicJwk },
+    iat: now,
+    exp,
+  };
+  const opSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "OpenPaymentMandate", payload: openPayment }, identity);
+  s.openPaymentMandate = { id: openPayment.id, segment: opSigned.segment, sdJwt: opSigned.sdJwt, payload: openPayment };
+  s.occurrence = 0;
+
+  emit(s, {
+    layer: "AP2",
+    kind: "mandate",
+    name: "Open Checkout + Payment Mandate",
+    method: "dSD-JWT root · ES256 · user device key · cnf=agent",
+    desc:
+      "Human-not-present authorization (AP2 v0.2 dSD-JWT chain roots). The user device key signs an Open Checkout Mandate (checkout.allowed_merchants + checkout.line_items) and an Open Payment Mandate (payment.amount_range" +
+      (s.recurring ? " + payment.agent_recurrence" : "") +
+      " + payment.reference), each an SD-JWT whose constraint arrays are selective disclosures and whose cnf names the agent key. The agent later signs the CLOSED (terminal) hop of each chain, sd_hash-bound to these roots.",
+    payload: { open_checkout: openCheckout, open_payment: openPayment },
+    mandate: {
+      kind: "Open Mandates",
+      id: openCheckout.id,
+      seal: "user · device key · cnf=agent",
+      rows: [
+        ["allowed merchants", String(eligibleMerchants.length)],
+        ["acceptable items", String(acceptable.length)],
+        ["amount ceiling", ceiling != null ? money(ceiling) + " USD" : "—"],
+        ["recurrence", s.recurring ? "ON_DEMAND ×2" : "—"],
+        ["cnf", "agent key ✓"],
+      ],
+      sig: ((ocSigned.segment ?? "").split("~")[0].split(".")[2] ?? "").slice(0, 42),
+    },
+    _auto: true,
+  });
 }
 
 /** Convert minor units → display dollars for the UI. */
@@ -491,7 +629,7 @@ export function addItem(s: Session, productId: string, merchantId: string) {
 }
 
 /* ================================================================== */
-/* 3. Checkout: create → update → verify signatures → cart mandate     */
+/* 3. Checkout: create → update → verify merchant_authorization (JWS)  */
 /* ================================================================== */
 
 function shippingAddress(s: Session): PostalAddress {
@@ -556,54 +694,10 @@ export async function createCheckout(s: Session) {
   s.checkout = co;
   byCheckout.set(co.id, s);
 
-  await issueCartMandate(s);
+  // No separate "Cart Mandate" in AP2 v0.2 — the merchant-signed checkout
+  // (ap2.merchant_authorization) IS the authenticated cart; it is embedded in
+  // the closed Checkout Mandate at pay time.
   return checkoutView(s);
-}
-
-async function issueCartMandate(s: Session) {
-  const co = s.checkout!;
-  const mid = co.merchant_id!;
-  const cm: CartMandatePayload = {
-    type: "CartMandate",
-    id: randomId("cart"),
-    derived_from: s.intentMandate?.id ?? "",
-    checkout_id: co.id,
-    merchant_id: mid,
-    merchant_profile: merchantProfileUrl(mid),
-    items: co.line_items.map((l) => ({ id: l.item.id, title: l.item.title, quantity: l.quantity, price: l.item.price })),
-    total: { amount: totalOf(co), currency: co.currency },
-    merchant_authorization: co.ap2!.merchant_authorization!,
-    within_intent:
-      s.constraints?.max_total == null || totalOf(co) <= s.constraints.max_total * 100,
-    issued_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-  };
-  const signed = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CartMandate", payload: cm }, identity);
-  s.cartMandate = { id: cm.id, jws: signed.jws, payload: cm };
-  emit(s, {
-    layer: "AP2",
-    kind: "mandate",
-    name: "Cart Mandate",
-    method: "JWS · ES256 · user + merchant",
-    desc: "The finalized cart — exact items, merchant and total — sealed into a Cart Mandate signed by the user's device key. It embeds the merchant's own authorization signature (nested binding: user signature over merchant signature).",
-    payload: cm,
-    mandate: {
-      kind: "Cart Mandate",
-      id: cm.id,
-      seal: "user + merchant",
-      rows: [
-        ["merchant", s.merchants[mid]?.name ?? mid],
-        ["items", String(cm.items.reduce((a, i) => a + i.quantity, 0)) + " line item(s)"],
-        ["total", money(cm.total.amount)],
-        ...(s.constraints?.max_total != null
-          ? ([["≤ intent max", "$" + s.constraints.max_total.toFixed(2) + (cm.within_intent ? " ✓" : " ✗")]] as [string, string][])
-          : []),
-        ["embeds merchant sig", "✓"],
-      ],
-      sig: signed.jws.split(".")[2]?.slice(0, 42) ?? "",
-    },
-    _auto: true,
-  });
 }
 
 export async function updateCheckout(
@@ -634,7 +728,6 @@ export async function updateCheckout(
   await verifyAndTraceMerchantAuth(s, updated.checkout, mid, "After update_checkout");
   s.checkout = updated.checkout;
   byCheckout.set(updated.checkout.id, s);
-  await issueCartMandate(s); // terms changed → new cart mandate
   return checkoutView(s);
 }
 
@@ -662,7 +755,6 @@ export function checkoutView(s: Session) {
       total: get("total") / 100,
     },
     address: s.address,
-    cart_mandate_id: s.cartMandate?.id,
     merchant_signed: !!co.ap2?.merchant_authorization,
   };
 }
@@ -676,7 +768,7 @@ export async function listPaymentMethods(s: Session) {
   return wallet.payment_methods;
 }
 
-export async function preparePayment(s: Session, methodId?: string) {
+export async function preparePayment(s: Session, methodId?: string, rpId?: string) {
   const wallet = await tracedTool<any>(s, {
     endpoint: CP_MCP,
     tool: "list_payment_methods",
@@ -734,11 +826,11 @@ export async function preparePayment(s: Session, methodId?: string) {
 
   // Passkey (Touch ID / SPC) — if enabled & enrolled, the browser must produce
   // a WebAuthn assertion over the checkout's UV challenge before we complete.
-  const status = await callTool<any>(CP_MCP, "passkey_status", {}, identity);
+  const status = await callTool<any>(CP_MCP, "passkey_status", { rp_id: rpId }, identity);
   let passkey: any = { enabled: status.enabled, enrolled: status.enrolled, rp_id: status.rp_id };
   if (status.enabled && status.enrolled) {
     const uvChallenge = checkoutUvChallenge(co);
-    const authOpts = await callTool<any>(CP_MCP, "passkey_auth_options", { uv_challenge: uvChallenge, checkout_id: co.id }, identity);
+    const authOpts = await callTool<any>(CP_MCP, "passkey_auth_options", { uv_challenge: uvChallenge, checkout_id: co.id, rp_id: rpId }, identity);
     passkey = { ...passkey, uv_challenge: uvChallenge, auth_options: authOpts };
   }
   return {
@@ -751,13 +843,21 @@ export async function preparePayment(s: Session, methodId?: string) {
   };
 }
 
-export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; webauthn?: any } = {}) {
+export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; webauthn?: any; interactive3ds?: boolean } = {}) {
   const co = s.checkout!;
   const mid = co.merchant_id!;
   const total = totalOf(co);
   const humanPresent = opts.humanPresent !== false;
   const rail = s.rail ?? "card_network";
   const handler = rail === "rtp" ? "com.paystream.rtp" : "com.google.pay";
+
+  // Human-not-present requires user-signed open mandates. If the session went
+  // autonomous after search (e.g. the user toggled it at pay time in the live
+  // flow), mint them now from the captured constraints + search results.
+  if (!humanPresent && !s.openCheckoutMandate) {
+    s.humanPresent = false;
+    await issueOpenMandates(s, s.constraints!);
+  }
 
   // --- Agent-side autonomy pre-check (the CP enforces the same policy at
   //     sign_mandate; checking here gives the user a clear early answer). ---
@@ -797,69 +897,129 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
     }
   }
 
-  // --- Payment Mandate (user device key via CP) ---
+  // AP2 binding: checkout_jwt = merchant-signed JWT of the Checkout (derived from
+  // merchant_authorization); checkout_hash = base64url hash of it. The closed
+  // Payment Mandate's transaction_id and the closed Checkout Mandate's
+  // checkout_hash both equal this — binding both mandates to the exact terms.
+  const coJwt = checkoutJwt(co);
+  const coHash = checkoutJwtHash(coJwt);
+
+  // --- Payment Mandate (AP2 mandate.payment.1; SD-JWT+kb). transaction_id =
+  //     hash(checkout_jwt) binds it to the signed checkout. ---
   const pm: PaymentMandatePayload = {
     type: "PaymentMandate",
+    vct: "mandate.payment.1",
     id: randomId("pay"),
-    cart_mandate: s.cartMandate!.id,
+    transaction_id: coHash,
+    payee: { id: mid, name: s.merchants[mid]?.name ?? mid, website: merchantProfileUrl(mid) },
+    payment_amount: { amount: total, currency: co.currency },
+    payment_instrument: {
+      id: `instr_${s.instrument?.last4 ?? "0000"}`,
+      type: "card",
+      description: `${s.instrument?.network ?? "card"} ···· ${s.instrument?.last4 ?? "0000"}`,
+    },
+    // Human-not-present: digest of the user-signed Open Payment Mandate this
+    // closed mandate satisfies (absent in the direct flow).
+    open_payment_mandate: humanPresent ? undefined : openMandateDigest(s.openPaymentMandate!.sdJwt),
     checkout_id: co.id,
     handler,
-    amount: { amount: total, currency: co.currency },
-    payee: merchantProfileUrl(mid),
     agent: AGENT_PROFILE_URL, // KYA: the PSP keys registry/velocity/reputation on this
     rail,
-    authorized_by: "device_biometric",
+    authorized_by: humanPresent ? "device_biometric" : "agent_open_mandate",
     human_present: humanPresent,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 15 * 60,
     issued_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   };
-  const pmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: pm }, identity);
-  s.paymentMandate = { id: pm.id, jws: pmSigned.jws, payload: pm };
+  // Human-present → the user device key signs the closed Payment Mandate at the
+  // CP (biometric/passkey-gated). Human-not-present → the AGENT signs the closed
+  // (terminal) hop of a dSD-JWT chain whose ROOT is the user-signed Open Payment
+  // Mandate (cnf=agent); the terminal's `sd_hash` binds it to that root.
+  if (humanPresent) {
+    const pmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: pm }, identity);
+    s.paymentMandate = { id: pm.id, jws: pmSigned.jws, payload: pm };
+  } else {
+    s.occurrence = (s.occurrence ?? 0) + 1;
+    const term = issueDelegateTerminal(
+      { ...(pm as unknown as Record<string, unknown>), iss: AGENT_PROFILE_URL },
+      agentKey,
+      { sdJwt: s.openPaymentMandate!.sdJwt },
+      { aud: merchantProfileUrl(mid), nonce: co.id }
+    );
+    const chain = joinChain([s.openPaymentMandate!.segment, term.segment]);
+    s.paymentMandate = { id: pm.id, jws: chain, payload: pm };
+  }
   emit(s, {
     layer: "AP2",
     kind: "mandate",
-    name: "Payment Mandate",
-    method: "JWS · ES256 · user device key",
-    desc: "Approved with the device biometric in the Google Pay sheet: authorizes exactly this amount to this merchant via this instrument, linked to the Cart Mandate. Travels to the PSP inside the composite token.",
+    name: "Payment Mandate (closed · mandate.payment.1)",
+    method: humanPresent ? "SD-JWT+kb · ES256 · user device key" : "SD-JWT+kb · ES256 · AGENT key (open-mandate authority)",
+    desc: humanPresent
+      ? "Approved with the device biometric in the Google Pay sheet: authorizes exactly this amount to this merchant via this instrument. Travels to the PSP inside the composite token."
+      : "Signed autonomously by the agent under the user-signed Open Payment Mandate (cnf=agent key). Carries the open mandate digest; the PSP verifies it satisfies the open constraints (amount/budget/recurrence). Travels to the PSP inside the composite token.",
     payload: pm,
     mandate: {
       kind: "Payment Mandate",
       id: pm.id,
-      seal: "user · biometric",
+      seal: humanPresent ? "user · biometric" : "agent · open mandate",
       rows: [
         ["handler", rail === "rtp" ? "RTP · instant bank transfer" : "Google Pay"],
         ["rail", rail],
         ["amount", money(total)],
         ["payee", s.merchants[mid]?.name ?? mid],
-        ["links cart", s.cartMandate!.id.slice(0, 18) + "…"],
+        humanPresent
+          ? (["authorized", "user device key"] as [string, string])
+          : (["satisfies open", (s.openPaymentMandate?.id ?? "").slice(0, 18) + "…"] as [string, string]),
       ],
-      sig: pmSigned.jws.split(".")[2]?.slice(0, 42) ?? "",
+      sig: (s.paymentMandate!.jws.split("~").pop() || s.paymentMandate!.jws).split(".")[2]?.slice(0, 42) ?? "",
     },
     _auto: true,
   });
 
   // --- Checkout Mandate: real SD-JWT+kb issued by the CP, key-bound to the
   //     user device key, audience = THIS merchant, nonce = checkout id. ---
-  const cmSigned = await callTool<any>(
-    CP_MCP,
-    "sign_mandate",
-    {
-      kind: "CheckoutMandate",
-      // If a passkey is enrolled, the user's WebAuthn/SPC assertion (Touch ID)
-      // over the checkout's UV challenge gates this signature at the CP.
-      webauthn: opts.webauthn,
-      payload: {
-        checkout: co,
-        cart_mandate_id: s.cartMandate!.id,
-        intent_mandate_id: s.intentMandate?.id,
-        human_present: humanPresent,
-        aud: merchantProfileUrl(mid),
-        nonce: co.id,
-        reveal: ["sub"], // disclose user id; withhold buyer_email (selective disclosure)
+  let cmSigned: any;
+  if (humanPresent) {
+    cmSigned = await callTool<any>(
+      CP_MCP,
+      "sign_mandate",
+      {
+        kind: "CheckoutMandate",
+        // If a passkey is enrolled, the user's WebAuthn/SPC assertion (Touch ID)
+        // over the checkout's UV challenge gates this signature at the CP.
+        webauthn: opts.webauthn,
+        payload: {
+          checkout: co,
+          human_present: true,
+          aud: merchantProfileUrl(mid),
+          nonce: co.id,
+          reveal: ["sub"], // disclose user id; withhold buyer_email (selective disclosure)
+        },
       },
-    },
-    identity
-  );
+      identity
+    );
+  } else {
+    // Human-not-present: the AGENT signs the closed (terminal) hop of a dSD-JWT
+    // chain whose ROOT is the user-signed Open Checkout Mandate (cnf=agent). The
+    // terminal's `sd_hash` binds it to the root; the merchant verifies the chain
+    // and checks the checkout satisfies the open constraints.
+    const now = Math.floor(Date.now() / 1000);
+    const closedClaims = {
+      vct: "mandate.checkout.1",
+      iss: AGENT_PROFILE_URL,
+      sub: "user_alex",
+      iat: now,
+      exp: now + 30 * 60,
+      checkout_jwt: coJwt,
+      checkout_hash: coHash,
+      checkout: co, // convenience copy used by the merchant for terms/constraints
+      human_present: false,
+    };
+    const term = issueDelegateTerminal(closedClaims as any, agentKey, { sdJwt: s.openCheckoutMandate!.sdJwt }, { aud: merchantProfileUrl(mid), nonce: co.id });
+    const chain = joinChain([s.openCheckoutMandate!.segment, term.segment]);
+    cmSigned = { jws: chain, id: randomId("comandate"), format: "dc+sd-jwt chain (open~~closed)" };
+  }
   s.checkoutMandateJws = cmSigned.jws;
   if (cmSigned.passkey_evidence) {
     emit(s, {
@@ -872,27 +1032,77 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
   emit(s, {
     layer: "AP2",
     kind: "mandate",
-    name: "Checkout Mandate (ap2.checkout_mandate)",
-    method: "SD-JWT+kb · issuer=CP, holder=user device key",
-    desc: "A real SD-JWT+kb verifiable credential: the CP issues it (issuer signature), it is KEY-BOUND to the user's device key (the holder signs a key-binding JWT over aud=merchant + nonce=checkout id), and it embeds the FULL merchant-signed checkout. Selective disclosure reveals the user id but withholds the email. Required by the merchant at complete_checkout.",
-    payload: { format: cmSigned.format, embedded_checkout_id: co.id, aud: merchantProfileUrl(mid), nonce: co.id, disclosed: ["sub"], withheld: ["buyer_email"], presentation: truncate(cmSigned.jws, 120) },
+    name: "Checkout Mandate (closed · ap2.checkout_mandate)",
+    method: humanPresent ? "SD-JWT+kb · issuer=CP, holder=user device key" : "SD-JWT+kb · issuer=holder=AGENT key (open-mandate authority)",
+    desc: humanPresent
+      ? "A real SD-JWT+kb verifiable credential: the CP issues it (issuer signature), it is KEY-BOUND to the user's device key (the holder signs a key-binding JWT over aud=merchant + nonce=checkout id), and it embeds the FULL merchant-signed checkout. Selective disclosure reveals the user id but withholds the email. Required by the merchant at complete_checkout."
+      : "Signed autonomously by the agent (issuer=holder=agent key) under the user-signed Open Checkout Mandate (cnf=agent key). Bound to aud=merchant + nonce=checkout id, it embeds the FULL merchant-signed checkout and the open mandate digest. The merchant verifies it satisfies the open constraints (allowed_merchants + line_items).",
+    payload: { format: cmSigned.format, embedded_checkout_id: co.id, aud: merchantProfileUrl(mid), nonce: co.id, open_checkout_mandate: humanPresent ? undefined : s.openCheckoutMandate?.id, presentation: truncate(cmSigned.jws, 120) },
     mandate: {
       kind: "Checkout Mandate",
       id: cmSigned.id,
-      seal: "SD-JWT+kb · issuer+holder",
+      seal: humanPresent ? "SD-JWT+kb · issuer=CP + holder=user" : "SD-JWT+kb · agent (open-mandate)",
       rows: [
         ["format", "dc+sd-jwt~kb"],
         ["embeds checkout", co.id],
         ["audience (kb)", s.merchants[mid]?.name ?? mid],
         ["nonce (kb)", co.id.slice(0, 18) + "…"],
-        ["selective disclosure", "sub ✓ · email ✗"],
+        humanPresent
+          ? (["selective disclosure", "sub ✓ · email ✗"] as [string, string])
+          : (["satisfies open", (s.openCheckoutMandate?.id ?? "").slice(0, 18) + "…"] as [string, string]),
       ],
       sig: (cmSigned.jws.split("~").pop() || "").split(".")[2]?.slice(0, 42) ?? "",
     },
     _auto: true,
   });
 
-  const completed = await submitComplete(s, { humanPresent });
+  const completed = await submitComplete(s, { humanPresent, interactive: opts.interactive3ds });
+  s.checkout = completed;
+  // Interactive 3-D Secure: submitComplete paused at the escalation and returned
+  // the still-escalated checkout. We surface a `threeds` payload (one consistent
+  // result shape) so the browser opens the bank page and calls resolveThreeDs().
+  const needs3ds = completed.status === "requires_escalation";
+  if (!needs3ds) s.order = completed.order;
+  const eta = s.order?.estimated_delivery
+    ? new Date(s.order.estimated_delivery).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    : undefined;
+  return {
+    order: needs3ds ? undefined : s.order,
+    eta,
+    last4: s.instrument?.last4,
+    total: total / 100,
+    escalated: !!s.lastEscalation,
+    receipts: { open_checkout_mandate: s.openCheckoutMandate?.id, open_payment_mandate: s.openPaymentMandate?.id, payment_mandate: s.paymentMandate?.id },
+    threeds: needs3ds
+      ? { continue_url: completed.continue_url, challenge_id: (completed.continue_url ?? "").split("/").pop() }
+      : undefined,
+  };
+}
+
+/** Resume an interactive 3-D Secure challenge: resolve it on the Credentials
+ *  Provider's trusted surface, then retry complete_checkout with the attestation.
+ *  Called by the browser after the user approves (or cancels) the bank page. */
+export async function resolveThreeDs(s: Session, opts: { outcome?: string } = {}) {
+  const co = s.checkout!;
+  const total = totalOf(co);
+  const outcome = opts.outcome === "cancelled" || opts.outcome === "failed" ? opts.outcome : "success";
+  const challengeId = (s.lastEscalation?.continue_url ?? "").split("/").pop() ?? randomId("3ds", 12);
+  const att = await callTool<any>(CP_MCP, "resolve_challenge", { challenge_id: challengeId, outcome }, identity);
+  emit(s, {
+    layer: "AP2", kind: "mandate", name: outcome === "success" ? "3-D Secure attestation" : "3-D Secure cancelled",
+    method: "user · biometric on bank surface",
+    desc: outcome === "success"
+      ? "The user completed Strong Customer Authentication on the bank's page; the Credentials Provider returns an attestation the PSP trusts, so the retry succeeds without a second challenge."
+      : "The user cancelled the bank challenge — no attestation was issued and the payment was not completed.",
+    payload: { challenge_id: challengeId, outcome: att.outcome, attestation: truncate(att.attestation, 24) },
+    mandate: outcome === "success"
+      ? { kind: "3DS Attestation", id: challengeId, seal: "user · 3DS", rows: [["outcome", att.outcome], ["attestation", truncate(att.attestation, 20) ?? "—"]], sig: (att.attestation ?? "").slice(0, 20) }
+      : undefined,
+  });
+  if (att.outcome !== "success" || !att.attestation) {
+    throw new Error("3-D Secure was cancelled — the payment was not completed. You can try again from the checkout.");
+  }
+  const completed = await submitComplete(s, { humanPresent: true }, att.attestation);
   s.checkout = completed;
   s.order = completed.order;
   const eta = s.order?.estimated_delivery
@@ -903,13 +1113,13 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
     eta,
     last4: s.instrument?.last4,
     total: total / 100,
-    escalated: !!s.lastEscalation,
-    receipts: { intent_mandate: s.intentMandate?.id, cart_mandate: s.cartMandate?.id, payment_mandate: s.paymentMandate?.id },
+    escalated: true,
+    receipts: { open_checkout_mandate: s.openCheckoutMandate?.id, open_payment_mandate: s.openPaymentMandate?.id, payment_mandate: s.paymentMandate?.id },
   };
 }
 
 /** complete_checkout with verified response signature + 3DS escalation retry. */
-async function submitComplete(s: Session, opts: { humanPresent: boolean }, challengeAttestation?: string): Promise<Checkout> {
+async function submitComplete(s: Session, opts: { humanPresent: boolean; interactive?: boolean }, challengeAttestation?: string): Promise<Checkout> {
   const co = s.checkout!;
   const mid = co.merchant_id!;
   // Multi-rail: pick the advertised handler matching the selected rail.
@@ -941,15 +1151,17 @@ async function submitComplete(s: Session, opts: { humanPresent: boolean }, chall
                 postal_code: s.address.postal_code,
                 address_country: s.address.address_country,
               },
+              // payment_mandate is a dSD-JWT chain (open~~closed) for human-not-present,
+              // or a single SD-JWT+kb for human-present.
               credential: { type: "AP2_COMPOSITE", token: { network_token: s.instrument, payment_mandate: s.paymentMandate!.jws } },
             },
           ],
         },
         signals: { "dev.ucp.buyer_ip": "203.0.113.42", "dev.ucp.user_agent": "Shoppy/1.0 (UCP platform; AP2)" },
-        // intent_mandate: verified by the merchant AND re-verified by the PSP —
-        // the purchase is validated against the user's original signed intent
-        // across all payment parties.
-        ap2: { checkout_mandate: s.checkoutMandateJws, intent_mandate: s.intentMandate?.jws, ...(challengeAttestation ? { challenge_attestation: challengeAttestation } : {}) },
+        // checkout_mandate is a dSD-JWT chain (open~~closed) for human-not-present,
+        // or a single SD-JWT+kb for human-present. The open mandate is the root hop
+        // of the chain, so no separate open_checkout_mandate field is needed.
+        ap2: { checkout_mandate: s.checkoutMandateJws, ...(challengeAttestation ? { challenge_attestation: challengeAttestation } : {}) },
       },
     },
     identity,
@@ -993,6 +1205,10 @@ async function submitComplete(s: Session, opts: { humanPresent: boolean }, chall
       desc: "The platform opens the bank's continue_url for the user to complete Strong Customer Authentication (simulated trusted surface).",
       payload: { continue_url: checkout.continue_url, challenge_id: challengeId },
     });
+    // Interactive human-present flow: pause and hand the bank page to the UI. The
+    // browser opens continue_url; once the user approves, resolveThreeDs() resolves
+    // the challenge and retries. Autonomous / scripted flows fall through to auto-resolve.
+    if (opts.interactive && opts.humanPresent) return checkout;
     const att = await callTool<any>(CP_MCP, "resolve_challenge", { challenge_id: challengeId, outcome: "success" }, identity);
     emit(s, {
       layer: "AP2", kind: "mandate", name: "3-D Secure attestation",
@@ -1004,6 +1220,44 @@ async function submitComplete(s: Session, opts: { humanPresent: boolean }, chall
     });
     return submitComplete(s, opts, att.attestation);
   }
+
+  // --- AP2 Receipts: surface the merchant Checkout Receipt + PSP Payment Receipt
+  //     (signed JWS) as a dedicated trace card. reference = hash of the closed
+  //     mandate each binds to → non-repudiable dispute evidence. ---
+  const decodeReceipt = (jws?: string): any => {
+    try {
+      return jws ? JSON.parse(b64u.decode(jws.split(".")[1]).toString("utf8")) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const cr = decodeReceipt(checkout.ap2?.checkout_receipt);
+  const pr = decodeReceipt(checkout.ap2?.payment_receipt);
+  if (cr || pr) {
+    emit(s, {
+      layer: "AP2",
+      tag: "AP2",
+      kind: "mandate",
+      name: "AP2 Receipts (Checkout + Payment)",
+      method: "signed JWS · ES256",
+      desc: "The merchant returns a signed Checkout Receipt and the PSP a signed Payment Receipt; each `reference` is the hash of the closed mandate it binds to — non-repudiable dispute evidence.",
+      payload: { checkout_receipt: cr, payment_receipt: pr },
+      mandate: {
+        kind: "AP2 Receipts",
+        id: cr?.order_id ?? pr?.payment_id ?? "receipts",
+        seal: "merchant + PSP signed",
+        rows: [
+          ["checkout receipt", cr ? `${cr.status} · order ${String(cr.order_id ?? "").slice(-8)}` : "—"],
+          ["payment receipt", pr ? `${pr.status} · pay ${String(pr.payment_id ?? "").slice(-8)}` : "—"],
+          ["checkout ref", cr?.reference ? cr.reference.slice(0, 18) + "…" : "—"],
+          ["payment ref", pr?.reference ? pr.reference.slice(0, 18) + "…" : "—"],
+        ],
+        sig: (checkout.ap2?.checkout_receipt ?? "").split(".")[2]?.slice(0, 42) ?? "",
+      },
+      _auto: true,
+    });
+  }
+
   return checkout;
 }
 
@@ -1053,7 +1307,6 @@ export async function selectShipping(s: Session, optionId: string) {
   });
   await verifyAndTraceMerchantAuth(s, updated.checkout, mid, "After shipping change");
   s.checkout = updated.checkout;
-  await issueCartMandate(s);
   return checkoutView(s);
 }
 
@@ -1070,7 +1323,6 @@ export async function applyPromo(s: Session, code: string) {
   });
   await verifyAndTraceMerchantAuth(s, updated.checkout, mid, "After discount");
   s.checkout = updated.checkout;
-  await issueCartMandate(s);
   const warning = updated.checkout.messages?.find((m) => m.code === "invalid_discount_code");
   return { ...checkoutView(s), discount_warning: warning?.content };
 }
@@ -1206,7 +1458,7 @@ export async function fileDispute(s: Session, reason = "item_not_as_described") 
     method: "adjudicator package",
     desc: "In a dispute, the user-signed mandates prove the buyer authorized exactly these terms — the cryptographic chain of evidence the adjudicator uses to assign liability.",
     payload: r.evidence,
-    mandate: { kind: "Dispute Evidence", id: orderId ?? "", seal: "user-signed mandates", rows: [["reason", reason], ["cart mandate", (r.evidence?.cart_mandate_id ?? "").slice(0, 18) + "…"], ["checkout mandate", "present ✓"], ["merchant seal", "present ✓"]], sig: "" },
+    mandate: { kind: "Dispute Evidence", id: orderId ?? "", seal: "user-signed mandates", rows: [["reason", reason], ["checkout mandate", "present ✓"], ["payment mandate", "present ✓"], ["merchant seal", "present ✓"]], sig: "" },
     _auto: true,
   });
   return { order_id: orderId, disputed: true, evidence: r.evidence };
@@ -1241,14 +1493,14 @@ export async function lookupProduct(s: Session, merchantId: string, productId: s
   return { product: { id: r.product.id, title: r.product.title, price: r.product.price_range.min.amount / 100 } };
 }
 
-export { issueCartMandate, verifyAndTraceMerchantAuth };
+export { verifyAndTraceMerchantAuth };
 
 /* ================================================================== */
 /* Passkeys (WebAuthn / SPC) — relayed to the Credentials Provider     */
 /* ================================================================== */
 
-export async function passkeyStatus(s: Session) {
-  return callTool<any>(CP_MCP, "passkey_status", {}, identity);
+export async function passkeyStatus(s: Session, rpId?: string) {
+  return callTool<any>(CP_MCP, "passkey_status", { rp_id: rpId }, identity);
 }
 
 /** Read the user's spend-control policy (used by the UI to preview the rail). */
@@ -1282,12 +1534,12 @@ export async function requestApproval(s: Session) {
 export async function approvalStatus(s: Session) {
   return callTool<any>(CP_MCP, "check_approval", { checkout_id: s.checkout?.id }, identity);
 }
-export async function passkeyRegisterOptions(s: Session) {
-  const r = await callTool<any>(CP_MCP, "passkey_register_options", {}, identity);
+export async function passkeyRegisterOptions(s: Session, rpId?: string) {
+  const r = await callTool<any>(CP_MCP, "passkey_register_options", { rp_id: rpId }, identity);
   return r.options;
 }
-export async function passkeyRegister(s: Session, response: any, challenge?: string) {
-  const r = await callTool<any>(CP_MCP, "passkey_register", { response, challenge }, identity);
+export async function passkeyRegister(s: Session, response: any, challenge?: string, rpId?: string) {
+  const r = await callTool<any>(CP_MCP, "passkey_register", { response, challenge, rp_id: rpId }, identity);
   emit(s, {
     layer: "AP2", kind: "verify", tag: "AP2", name: "Passkey enrolled",
     method: "WebAuthn registration",
@@ -1329,6 +1581,168 @@ export function snapshot(s: Session) {
 /* 10. Scenario runner — success & failure flows for the demo          */
 /* ================================================================== */
 
+/**
+ * End-to-end HUMAN-NOT-PRESENT purchase, deterministic (no LLM). This is the
+ * defining HNP experience: the user authorizes ONCE (Phase 1a — sign the open
+ * mandates, then leave) and the agent completes the ENTIRE task autonomously
+ * (Phase 1b shopping + Phase 2 payment) with NO further human interaction —
+ * search, pick the best offer, check out, sign the closed mandates with the
+ * agent key, and pay. Contrast with human-present, where the user drives each
+ * step and approves the closed mandates with a biometric at pay time.
+ */
+/** The signed per-charge cap (minor units) the user actually asked for: an
+ *  explicit "buy if it drops below $X" wins, else the stated budget. No silent
+ *  inflation — undefined means the user set no cap. */
+export function spendCapCents(c?: ParsedIntent): number | undefined {
+  if (!c) return undefined;
+  if (c.buy_below != null) return Math.round(c.buy_below * 100);
+  if (c.max_total != null) return Math.round(c.max_total * 100);
+  return undefined;
+}
+
+/** Pick the best authorized offer whose estimated TOTAL (with ~tax) fits the
+ *  user's cap. Prefers the recommended product (s.products order) that fits,
+ *  else the cheapest that fits. Returns null if nothing fits (the agent holds,
+ *  rather than overspending). */
+function pickOffer(s: Session, merchantIds: string[], capCents?: number): { product: MergedProduct; offer: MergedOffer } | null {
+  const TAX = 1.09; // conservative buffer so tax doesn't push a pick over the cap
+  const cands = s.products
+    .map((p) => ({ product: p, offer: [...p.offers].filter((o) => merchantIds.includes(o.merchant)).sort((a, b) => a.price - b.price)[0] }))
+    .filter((c): c is { product: MergedProduct; offer: MergedOffer } => !!c.offer);
+  const within = cands.filter((c) => capCents == null || Math.round(c.offer.price * TAX) <= capCents);
+  return within[0] ?? null;
+}
+
+export async function runAutonomous(s: Session, text: string) {
+  // --- Phase 1a (human present): authorize autonomous commerce, then leave. ---
+  setModality(s, false);
+  // Isolation: a fresh user-initiated run never inherits a prior scenario's
+  // standing-intent state (the subscription scenario sets these; reset defensively).
+  s.recurring = false;
+  s.occurrence = 0;
+  const intent = await runIntent(s, text, { humanPresent: false });
+  emit(s, {
+    layer: "AP2", tag: "AP2", kind: "verify", name: "Phase 1a · User authorizes, then leaves",
+    method: "open mandates signed on the Trusted Surface (biometric/consent)",
+    desc: "Human-present sub-phase: the user approved the Open Checkout + Open Payment Mandates (constraints + cnf=agent key) on the Trusted Surface, permanently linking them. The user now LEAVES — everything below happens with NO user in the session.",
+    payload: { open_checkout_mandate: s.openCheckoutMandate?.id, open_payment_mandate: s.openPaymentMandate?.id, agent_key: agentKey.publicJwk.kid },
+  });
+  if (!s.products.length) {
+    emit(s, { layer: "UCP", tag: "UCP", kind: "verify", name: "Phase 1b · Nothing within constraints", method: "agent decision", desc: "No offer satisfied the signed constraints, so the agent does NOT buy. No purchase = the user's mandates protected them.", payload: {} });
+    return { intent, autonomous: true, order: null, note: "no offer matched the signed constraints" };
+  }
+  // --- Phase 1b (human NOT present): the agent autonomously picks the best offer
+  //     that FITS the user's signed cap (never overspends). ---
+  const capCents = spendCapCents(s.constraints);
+  const picked = pickOffer(s, s.eligible, capCents);
+  if (!picked) {
+    emit(s, { layer: "AP2", tag: "AP2", kind: "verify", name: "Phase 1b · Held — nothing within your cap", method: "open Payment Mandate amount_range", desc: `No offer's total fits your signed cap of ${capCents != null ? money(capCents) : "—"}; the agent does NOT buy (it won't exceed what you authorized).`, payload: { cap: capCents } });
+    return { intent, autonomous: true, order: null, watching: true, cap: capCents != null ? capCents / 100 : undefined, note: "no offer within the signed cap" };
+  }
+  const best = picked.product;
+  const offer = picked.offer;
+  emit(s, {
+    layer: "UCP", tag: "UCP", kind: "verify", name: "Phase 1b · Agent shops autonomously (no user)",
+    method: "agent selection within signed constraints",
+    desc: `No user in session. The agent selects ${best.name} at ${s.merchants[offer.merchant]?.name ?? offer.merchant} — the best offer within your cap that satisfies the open Checkout Mandate's allowed_merchants + line_items — and opens a merchant-signed checkout.`,
+    payload: { product: best.id, merchant: offer.merchant, price: offer.price, cap: capCents },
+  });
+  await select(s, best.id, offer.merchant);
+  await createCheckout(s);
+  // Exact cap check now that the real total (incl. tax) is known.
+  const total = totalOf(s.checkout!);
+  if (capCents != null && total > capCents) {
+    emit(s, {
+      layer: "AP2", tag: "AP2", kind: "verify", name: "Phase 2 · Held — above the signed cap",
+      method: "open Payment Mandate amount_range",
+      desc: `The total ${money(total)} is above your signed cap of ${money(capCents)}. The agent does NOT buy — the Open Payment Mandate protects you.`,
+      payload: { current_total: total, cap: capCents },
+    });
+    return { intent, autonomous: true, order: null, watching: true, product: best.name, product_id: best.id, merchant: offer.merchant, current_total: total / 100, cap: capCents / 100 };
+  }
+  // --- Phase 2 (human NOT present): mint the instrument, then the agent signs the
+  //     closed Checkout + Payment Mandates with its OWN key and completes. ---
+  await preparePayment(s);
+  const r = await confirmAndPay(s, { humanPresent: false });
+  return { intent, autonomous: true, product: best.name, product_id: best.id, merchant: offer.merchant, order: r.order, total: r.total, receipts: r.receipts };
+}
+
+/**
+ * INTERACTIVE human-not-present — Phase 1a, part 1: parse the request and
+ * discover what the user must choose to authorize autonomy (which merchants the
+ * agent may use, and which payment method), WITHOUT signing anything yet. The UI
+ * presents these; the user picks; then authorizeAndRun signs + runs.
+ */
+export async function prepareAutonomy(s: Session, text: string) {
+  setModality(s, false);
+  // Isolation: never inherit a prior scenario's standing-intent state.
+  s.recurring = false;
+  s.occurrence = 0;
+  const intent = await runIntent(s, text, { humanPresent: false, deferOpenMandates: true });
+  const payment_methods = await listPaymentMethods(s);
+  return {
+    constraints: intent.constraints,
+    merchants: s.eligible.map((id) => ({ id, name: s.merchants[id]?.name ?? id })),
+    products: intent.products,
+    payment_methods,
+  };
+}
+
+/**
+ * INTERACTIVE human-not-present — Phase 1a (authorize) + Phase 1b/2 (autonomous).
+ * Signs the open mandates with the user's CHOSEN merchant allowlist + payment
+ * method, then the agent autonomously picks the best authorized offer, checks
+ * out, signs the closed mandates with its own key, and pays.
+ */
+export async function authorizeAndRun(s: Session, opts: { merchantIds?: string[]; methodId?: string }) {
+  s.humanPresent = false;
+  const merchantIds = opts.merchantIds?.length ? opts.merchantIds.filter((m) => s.eligible.includes(m)) : s.eligible;
+  const methods = await listPaymentMethods(s);
+  const method = methods.find((m: any) => m.id === opts.methodId) ?? methods.find((m: any) => m.default) ?? methods[0];
+  const instrument: Ap2PaymentInstrument | undefined = method
+    ? { id: `instr_${method.last4}`, type: method.rail === "rtp" ? "bank_account" : "card", description: method.display }
+    : undefined;
+
+  // --- Phase 1a: sign the open mandates with the user's chosen constraints. ---
+  await issueOpenMandates(s, s.constraints!, { allowedMerchantIds: merchantIds, instrument });
+  emit(s, {
+    layer: "AP2", tag: "AP2", kind: "verify", name: "Phase 1a · Authorized, then user leaves",
+    method: "open mandates signed on the Trusted Surface",
+    desc: `The user authorized autonomous commerce: allowed_merchants = ${merchantIds.map((m) => s.merchants[m]?.name ?? m).join(", ")}; payment = ${method?.display ?? "default"}; spend capped by the budget. The user now LEAVES — everything below runs with NO further interaction.`,
+    payload: { allowed_merchants: merchantIds, payment_method: method?.display, open_checkout_mandate: s.openCheckoutMandate?.id, open_payment_mandate: s.openPaymentMandate?.id },
+  });
+
+  // --- Phase 1b: the agent autonomously picks the best AUTHORIZED offer within the cap. ---
+  const capCents = spendCapCents(s.constraints);
+  const chosen = pickOffer(s, merchantIds, capCents);
+  if (!chosen) {
+    emit(s, { layer: "UCP", tag: "UCP", kind: "verify", name: "Phase 1b · No authorized offer within cap", method: "agent decision", desc: `None of the authorized merchants had a matching offer${capCents != null ? ` within your ${money(capCents)} cap` : ""} — the agent does not buy.`, payload: { allowed_merchants: merchantIds, cap: capCents } });
+    return { autonomous: true, order: null, note: "no offer at the authorized merchants within the cap" };
+  }
+  const pickProduct = chosen.product;
+  const pickOff = chosen.offer;
+  emit(s, {
+    layer: "UCP", tag: "UCP", kind: "verify", name: "Phase 1b · Agent shops autonomously (no user)",
+    method: "agent selection within signed constraints",
+    desc: `No user in session. The agent picks ${pickProduct.name} at ${s.merchants[pickOff.merchant]?.name ?? pickOff.merchant} (best authorized offer within your cap) and opens a merchant-signed checkout.`,
+    payload: { product: pickProduct.id, merchant: pickOff.merchant, price: pickOff.price, cap: capCents },
+  });
+  await select(s, pickProduct.id, pickOff.merchant);
+  await createCheckout(s);
+
+  // Exact cap check now that the real total (incl. tax) is known.
+  const total = totalOf(s.checkout!);
+  if (capCents != null && total > capCents) {
+    emit(s, { layer: "AP2", tag: "AP2", kind: "verify", name: "Phase 2 · Held — above the signed cap", method: "open Payment Mandate amount_range", desc: `Total ${money(total)} is above your ${money(capCents)} cap; the agent holds and does not buy.`, payload: { current_total: total, cap: capCents } });
+    return { autonomous: true, order: null, watching: true, product: pickProduct.name, current_total: total / 100, cap: capCents / 100 };
+  }
+
+  // --- Phase 2: mint the chosen method, agent-sign the closed mandates, pay. ---
+  await preparePayment(s, opts.methodId);
+  const r = await confirmAndPay(s, { humanPresent: false });
+  return { autonomous: true, product: pickProduct.name, merchant: pickOff.merchant, payment_method: method?.display, allowed_merchants: merchantIds, order: r.order, total: r.total, receipts: r.receipts };
+}
+
 export interface ScenarioDef {
   id: string;
   title: string;
@@ -1360,7 +1774,10 @@ export const SCENARIOS: ScenarioDef[] = [
   { id: "velocity", title: "Velocity exceeded", kind: "failure", blurb: "3 rapid purchases with a 2/min limit → 3rd declined, reputation dinged." },
   { id: "late_delivery", title: "Late delivery → refund", kind: "feature", blurb: "Carrier slips the ETA; the agent detects it and secures a 10% refund." },
   { id: "approval", title: "Approval workflow", kind: "feature", blurb: "Autonomy-blocked purchase → Walletly inbox → user approves → purchase completes." },
-  { id: "subscription", title: "Standing intent (recurring)", kind: "success", blurb: "One signed IntentMandate authorizes two autonomous purchase cycles." },
+  { id: "subscription", title: "Standing intent (recurring)", kind: "success", blurb: "One signed Open Payment Mandate (agent_recurrence) authorizes two autonomous purchase cycles." },
+  { id: "hnp_price_drop", title: "HNP: pre-authorize → price drop → auto-buy", kind: "success", blurb: "User authorizes 'buy if ≤ $260' and leaves; a merchant price-drop trigger fires and the agent buys autonomously — the canonical AP2 human-not-present flow." },
+  { id: "hnp_over_cap", title: "HNP: signed amount cap", kind: "failure", blurb: "Autonomous buy above the Open Payment Mandate amount_range → the PSP rejects it (mandate_scope_mismatch)." },
+  { id: "hnp_merchant_blocked", title: "HNP: merchant not allowed", kind: "failure", blurb: "Agent buys at a merchant outside the Open Checkout Mandate allowed_merchants → the merchant rejects it." },
 ];
 
 const HEADPHONES = "I'm looking for over-ear noise-cancelling headphones. Budget is under $300, and I need them delivered within 2 days.";
@@ -1369,6 +1786,26 @@ async function toCheckout(s: Session, merchant = "wavelength", product = "cadenc
   await runIntent(s, HEADPHONES);
   await select(s, product, merchant);
   await createCheckout(s);
+  // Spec Resolution Flow (step 6): validate the checkout RESPONSE against the
+  // composed schema (base checkout + active extension $defs).
+  try {
+    const co = s.checkout;
+    const mid = co?.merchant_id;
+    if (co && mid) {
+      const res = resolveComposedCheckoutSchema(s.negotiated?.[mid] ?? []).validate(co);
+      emit(s, {
+        layer: "UCP",
+        kind: "verify",
+        tag: "UCP",
+        name: res.ok ? "Schema Validation · checkout ✓" : "Schema Validation · checkout (issues)",
+        method: "composed checkout schema (allOf)",
+        desc: "The checkout response is validated against the composed schema (base checkout + active extension $defs).",
+        payload: { valid: res.ok, ...(res.ok ? {} : { errors: res.errors }) },
+      });
+    }
+  } catch {
+    /* best-effort validation */
+  }
 }
 
 /** Run a named scenario on an existing session, streaming trace events. */
@@ -1407,7 +1844,7 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
     }
     case "human_not_present": {
       s.humanPresent = false;
-      note("Human-not-present: the user signs an Intent Mandate authorizing autonomous purchase within constraints; the agent buys without the user in session.");
+      note("Human-not-present: the user signs Open Checkout + Open Payment Mandates (constraints + cnf=agent key); the agent then signs the closed mandates itself and buys without the user in session.");
       await toCheckout(s);
       await preparePayment(s);
       const r = await confirmAndPay(s, { humanPresent: false });
@@ -1438,14 +1875,17 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
     case "tamper": {
       await toCheckout(s);
       await preparePayment(s);
-      // Sign the mandate, then tamper the live checkout's price before completing.
+      // Sign the mandates over the CURRENT, validly merchant-signed checkout…
       const co = s.checkout!;
+      const total0 = totalOf(co);
       const cm = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: makePm(s) }, identity);
       s.paymentMandate = { id: cm.id, jws: cm.jws, payload: makePm(s) } as any;
-      const tampered = JSON.parse(JSON.stringify(co));
-      tampered.totals = tampered.totals.map((t: any) => (t.type === "total" ? { ...t, amount: t.amount - 5000 } : t));
-      const cmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: tampered, cart_mandate_id: s.cartMandate!.id, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id } }, identity);
-      note("Submitting a checkout mandate whose embedded total was lowered by $50 after signing.");
+      const cmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, human_present: true, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id } }, identity);
+      // …then ALTER THE CART AFTER SIGNING: selecting express shipping re-prices
+      // and re-signs the live session, so the embedded (signed) checkout no longer
+      // matches the live terms → the merchant's terms check rejects it.
+      await selectShipping(s, "express_next_day");
+      note(`Cart altered after signing — total ${money(total0)} → ${money(totalOf(s.checkout!))}; submitting the now-stale checkout mandate (terms no longer match the live session).`);
       try {
         await callTool(s.merchantEndpoints[co.merchant_id!], "complete_checkout", { id: co.id, checkout: { payment: { instruments: [payInstrument(s)] }, ap2: { checkout_mandate: cmSigned.jws } } }, identity);
         return { id, outcome: "unexpected_success", detail: {} };
@@ -1466,7 +1906,7 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
       const pmE = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: makePm(s) }, identity);
       s.paymentMandate = { id: pmE.id, jws: pmE.jws, payload: makePm(s) } as any;
       // Ask the CP to issue a properly-signed but already-EXPIRED checkout mandate.
-      const expired = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, cart_mandate_id: s.cartMandate!.id, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id, exp_override: -3600 } }, identity);
+      const expired = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, human_present: true, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id, exp_override: -3600 } }, identity);
       note("Submitting a checkout mandate whose exp is one hour in the past.");
       try {
         await callTool(s.merchantEndpoints[co.merchant_id!], "complete_checkout", { id: co.id, checkout: { payment: { instruments: [payInstrument(s)] }, ap2: { checkout_mandate: expired.jws } } }, identity);
@@ -1675,22 +2115,128 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
 
     /* ---- standing intent: recurring autonomous purchases ---- */
     case "subscription": {
-      note("Standing intent: the user signs ONE Intent Mandate; the agent runs two autonomous purchase cycles under it. Each cycle gets fresh cart/payment/checkout mandates, but the SAME standing intent is verified by merchant and PSP every time.");
+      note("Standing intent: the user signs ONE Open Payment Mandate carrying a payment.agent_recurrence constraint (ON_DEMAND ×2). The agent runs two autonomous purchase cycles under it — each gets a fresh agent-signed closed checkout/payment mandate, but the SAME open mandates are verified by merchant and PSP every time, and the occurrence count is bounded.");
       s.humanPresent = false;
+      s.recurring = true;
       try {
         await toCheckout(s);
-        const intentId = s.intentMandate?.id;
+        const openId = s.openPaymentMandate?.id;
         await preparePayment(s);
         const r1 = await confirmAndPay(s, { humanPresent: false });
-        // Cycle 2 — no new intent: reuse the standing mandate.
+        // Cycle 2 — no new authorization: reuse the standing open mandates.
         await select(s, "cadence-anc-pro", "wavelength");
         await createCheckout(s);
         await preparePayment(s);
         const r2 = await confirmAndPay(s, { humanPresent: false });
-        const reused = s.intentMandate?.id === intentId;
-        note(`Cycle 2 completed under the same Intent Mandate ${intentId} (reused=${reused}).`);
-        return { id, outcome: "subscription_cycles_completed", detail: { intent_mandate: intentId, reused, orders: [r1.order?.id, r2.order?.id] } };
+        const reused = s.openPaymentMandate?.id === openId;
+        note(`Cycle 2 completed under the same Open Payment Mandate ${openId} (reused=${reused}, occurrence=${s.occurrence} of 2).`);
+        return { id, outcome: "subscription_cycles_completed", detail: { open_payment_mandate: openId, reused, occurrences: s.occurrence, orders: [r1.order?.id, r2.order?.id] } };
       } finally {
+        s.humanPresent = true;
+        s.recurring = false;
+      }
+    }
+
+    /* ---- HNP: Open Payment Mandate amount cap enforced by the PSP ---- */
+    case "hnp_over_cap": {
+      note("Human-not-present: the user authorizes autonomous spend up to only $50 via the Open Payment Mandate amount_range. The agent then assembles a ~$329 checkout and signs the closed mandates — the PSP must reject it against the signed cap (the open mandate, not just wallet policy).");
+      s.humanPresent = false;
+      try {
+        await toCheckout(s); // normal open mandates + a ~$329 cadence checkout
+        // Replace the Open Payment Mandate with a deliberately tight $50 cap
+        // (still user-signed at the CP, cnf=agent), referencing the same open checkout.
+        const now = Math.floor(Date.now() / 1000);
+        const tight: OpenPaymentMandatePayload = {
+          vct: OPEN_PAYMENT_MANDATE_VCT,
+          id: randomId("opm"),
+          user: "user_alex",
+          constraints: [amountRangeConstraint("USD", 5000), paymentReferenceConstraint(openMandateDigest(s.openCheckoutMandate!.sdJwt))],
+          cnf: { jwk: agentKey.publicJwk },
+          iat: now,
+          exp: now + 30 * 60,
+        };
+        const signed = await callTool<any>(CP_MCP, "sign_mandate", { kind: "OpenPaymentMandate", payload: tight }, identity);
+        s.openPaymentMandate = { id: tight.id, segment: signed.segment, sdJwt: signed.sdJwt, payload: tight };
+        await preparePayment(s);
+        await confirmAndPay(s, { humanPresent: false });
+        return { id, outcome: "unexpected_success", detail: {} };
+      } catch (e: any) {
+        return { id, outcome: "rejected", detail: { code: e.data?.code ?? "mandate_scope_mismatch", error: e.message } };
+      } finally {
+        s.humanPresent = true;
+      }
+    }
+
+    /* ---- HNP: Open Checkout Mandate allowed_merchants enforced by the merchant ---- */
+    case "hnp_merchant_blocked": {
+      note("Human-not-present: the user's Open Checkout Mandate allows SoundHub only. The agent autonomously assembles and signs a Wavelength checkout — the merchant must reject it against allowed_merchants.");
+      s.humanPresent = false;
+      try {
+        await runIntent(s, HEADPHONES, { humanPresent: false });
+        // Restrict the Open Checkout Mandate to SoundHub only (user-signed, cnf=agent).
+        const now = Math.floor(Date.now() / 1000);
+        const restricted: OpenCheckoutMandatePayload = {
+          vct: OPEN_CHECKOUT_MANDATE_VCT,
+          id: randomId("ocm"),
+          user: "user_alex",
+          constraints: [
+            allowedMerchantsConstraint([{ id: "soundhub", name: s.merchants["soundhub"]?.name ?? "SoundHub", website: merchantProfileUrl("soundhub") }]),
+            lineItemsConstraint([{ id: "line_1", acceptable_items: s.products.slice(0, 8).map((p) => ({ id: p.id, title: p.name })), quantity: 1 }]),
+          ],
+          cnf: { jwk: agentKey.publicJwk },
+          iat: now,
+          exp: now + 30 * 60,
+        };
+        const signed = await callTool<any>(CP_MCP, "sign_mandate", { kind: "OpenCheckoutMandate", payload: restricted }, identity);
+        s.openCheckoutMandate = { id: restricted.id, segment: signed.segment, sdJwt: signed.sdJwt, payload: restricted };
+        await select(s, "cadence-anc-pro", "wavelength");
+        await createCheckout(s);
+        await preparePayment(s);
+        await confirmAndPay(s, { humanPresent: false });
+        return { id, outcome: "unexpected_success", detail: {} };
+      } catch (e: any) {
+        return { id, outcome: "rejected", detail: { code: e.data?.code ?? "mandate_scope_mismatch", error: e.message } };
+      } finally {
+        s.humanPresent = true;
+      }
+    }
+
+    /* ---- HNP: pre-authorize → leave → price-drop trigger → autonomous buy ---- */
+    case "hnp_price_drop": {
+      note("Human-not-present (pre-authorized + triggered) — the canonical AP2 flow. Phase 1a: the user authorizes 'buy the Cadence ANC Pro if it drops to ≤ $260', the agent signs the Open Checkout + Payment Mandates (cnf=agent), and the user LEAVES. The agent then watches; a merchant price-drop event fires and the agent buys autonomously with no user present.");
+      s.humanPresent = false;
+      const setPrice = (price: number) =>
+        fetch(`${URLS.merchantPortal}/api/portal/catalog`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ merchant_id: "wavelength", product_id: "cadence-anc-pro", price }),
+        }).catch(() => {});
+      try {
+        await runIntent(s, HEADPHONES, { humanPresent: false });
+        // Tight cap at $260 — below the ~$274 list price — referencing the open checkout.
+        const now = Math.floor(Date.now() / 1000);
+        const capped: OpenPaymentMandatePayload = {
+          vct: OPEN_PAYMENT_MANDATE_VCT,
+          id: randomId("opm"),
+          user: "user_alex",
+          constraints: [amountRangeConstraint("USD", 26000), paymentReferenceConstraint(openMandateDigest(s.openCheckoutMandate!.sdJwt))],
+          cnf: { jwk: agentKey.publicJwk },
+          iat: now,
+          exp: now + 30 * 60,
+        };
+        const signed = await callTool<any>(CP_MCP, "sign_mandate", { kind: "OpenPaymentMandate", payload: capped }, identity);
+        s.openPaymentMandate = { id: capped.id, segment: signed.segment, sdJwt: signed.sdJwt, payload: capped };
+        note("Authorized: buy only at ≤ $260. The Cadence is currently above that, so the agent does NOT buy — it watches. The user has left the session.");
+        // --- Trigger: the merchant drops the price below the signed cap ---
+        await setPrice(22000);
+        note("📉 Trigger: Wavelength dropped the Cadence ANC Pro to $220 (price-drop event). Holding the pre-authorized open mandates, the agent now acts autonomously — no user present.");
+        await select(s, "cadence-anc-pro", "wavelength");
+        await createCheckout(s);
+        await preparePayment(s);
+        const r = await confirmAndPay(s, { humanPresent: false });
+        return { id, outcome: "order_created", detail: { trigger: "price_drop", new_price: 220, order: r.order?.id, total: r.total } };
+      } finally {
+        await setPrice(27400); // restore the list price for subsequent runs
         s.humanPresent = true;
       }
     }
@@ -1713,9 +2259,18 @@ async function setPolicy(patch: Record<string, unknown>) {
 
 function makePm(s: Session): PaymentMandatePayload {
   const co = s.checkout!;
+  const mid = co.merchant_id!;
   return {
-    type: "PaymentMandate", id: randomId("pay"), cart_mandate: s.cartMandate!.id, checkout_id: co.id,
-    handler: "com.google.pay", amount: { amount: totalOf(co), currency: co.currency }, payee: merchantProfileUrl(co.merchant_id!),
+    type: "PaymentMandate", vct: "mandate.payment.1", id: randomId("pay"),
+    transaction_id: checkoutJwtHash(checkoutJwt(co)),
+    payee: { id: mid, name: s.merchants[mid]?.name ?? mid, website: merchantProfileUrl(mid) },
+    payment_amount: { amount: totalOf(co), currency: co.currency },
+    payment_instrument: {
+      id: `instr_${s.instrument?.last4 ?? "0000"}`,
+      type: "card",
+      description: `${s.instrument?.network ?? "card"} ···· ${s.instrument?.last4 ?? "0000"}`,
+    },
+    checkout_id: co.id, handler: "com.google.pay",
     authorized_by: "device_biometric", human_present: true, issued_at: new Date().toISOString(), expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   };
 }

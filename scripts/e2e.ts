@@ -77,7 +77,7 @@ async function main() {
   });
   check("MCP initialize handshake works", (await init.json()).result?.serverInfo != null);
 
-  console.log("\n— 1. Session + Intent (discovery → negotiation → intent mandate → federated search)");
+  console.log("\n— 1. Session + Intent (discovery → negotiation → federated search; human-present needs no open mandate)");
   const session = await api("/session", {});
   const sid = session.session_id;
   check("session created", !!sid, sid);
@@ -87,11 +87,11 @@ async function main() {
     text: "I'm looking for over-ear noise-cancelling headphones. Budget is under $300, and I need them delivered within 2 days.",
   });
   check("constraints parsed", intent.constraints.max_total === 300 && intent.constraints.delivery_days === 2);
-  check("intent mandate issued", /^intent_/.test(intent.intentMandateId), intent.intentMandateId);
+  check("human-present needs no open mandate (AP2 v0.2)", intent.openCheckoutMandateId === undefined, String(intent.openCheckoutMandateId));
   check("4 merchants queried", intent.merchantsQueried === 4);
   check("products merged across merchants (incl. images)", intent.products.length >= 3 && intent.products.every((p: any) => p.image), intent.products.map((p: any) => p.id).join(", "));
   const cadence = intent.products.find((p: any) => p.id === "cadence-anc-pro");
-  // electromart's Cadence ships in 3–4 days → correctly excluded by the 2-day Intent Mandate constraint
+  // electromart's Cadence ships in 3–4 days → correctly excluded by the 2-day delivery constraint
   check("cadence offers from the 2 merchants meeting 2-day shipping", cadence.offers.length === 2);
   check("best offer is wavelength @ $274 (display units)", cadence.offers[0].merchant === "wavelength" && cadence.offers[0].price === 274);
 
@@ -100,11 +100,11 @@ async function main() {
   check("upsell offered (travel hardcase)", sel.upsell?.id === "travel-hardcase", `$${sel.upsell?.price}`);
   await api("/accessory", { session_id: sid });
 
-  console.log("\n— 3. Checkout (create → merchant signature verified → cart mandate)");
+  console.log("\n— 3. Checkout (create → merchant signature verified; closed Checkout Mandate signed at pay time)");
   const co = await api("/checkout", { session_id: sid });
   check("checkout ready", co.status === "ready_for_complete", co.checkout_id);
   check("merchant authorization present+verified", co.merchant_signed === true);
-  check("cart mandate sealed", /^cart_/.test(co.cart_mandate_id), co.cart_mandate_id);
+  check("no legacy cart mandate (AP2 v0.2)", co.cart_mandate_id === undefined, String(co.cart_mandate_id));
   // 27400 + 3400 = 30800 sub − 500 discount, tax 8.625% = 2613 → total 32913 = $329.13
   check("totals computed by merchant (minor units → $329.13)", co.totals.total === 329.13, `$${co.totals.total}`);
 
@@ -177,7 +177,7 @@ async function main() {
   const confirm = await api("/pay/confirm", { session_id: sid });
   check("order created", /^ord_/.test(confirm.order.id), confirm.order.id);
   check("order confirmation has permalink_url (spec-required)", /^https:\/\//.test(confirm.order.permalink_url ?? ""), confirm.order.permalink_url);
-  check("mandate receipts linked", !!confirm.receipts.intent_mandate && !!confirm.receipts.cart_mandate && !!confirm.receipts.payment_mandate);
+  check("payment mandate issued (human-present: no open mandate)", !!confirm.receipts.payment_mandate && confirm.receipts.open_checkout_mandate === undefined);
 
   const psp: any = await (await fetch(`${URLS.paymentProvider}/api/psp/state`)).json();
   const txn = psp.transactions[0];
@@ -230,13 +230,25 @@ async function main() {
   }
   check("merchant verification log complete", Object.keys(order?.evidence?.verification ?? {}).length >= 5, Object.keys(order?.evidence?.verification ?? {}).join(", "));
   const wallet: any = await (await fetch(`${URLS.credentialsProvider}/api/wallet/state`)).json();
-  check("CP logged signed mandates", wallet.mandates.length >= 4, [...new Set(wallet.mandates.map((m: any) => m.kind))].join(", "));
+  check("CP logged signed mandates (human-present: Checkout + Payment)", wallet.mandates.length >= 2 && wallet.mandates.some((m: any) => m.kind === "CheckoutMandate") && wallet.mandates.some((m: any) => m.kind === "PaymentMandate"), [...new Set(wallet.mandates.map((m: any) => m.kind))].join(", "));
   check("CP token consumed (single-use enforced)", wallet.tokens.find((t: any) => t.token === pay.instrument.token)?.used === true);
 
-  console.log("\n— 8. Agent-economy controls (spend policy · intent across parties · multi-rail · KYA · velocity · audit)");
-  // Intent validated across parties: merchant + PSP both recorded it.
-  check("merchant verified the intent mandate (budget ceiling)", /valid/.test(order?.evidence?.verification?.intent_mandate ?? ""), order?.evidence?.verification?.intent_mandate);
-  check("PSP independently verified the intent mandate", /valid/.test(txn?.mandate_verification?.intent_mandate ?? ""), txn?.mandate_verification?.intent_mandate);
+  console.log("\n— 8. Agent-economy controls (open mandates across parties · spend policy · multi-rail · KYA · velocity · audit)");
+  // Human-not-present: merchant + PSP independently verify the user-signed OPEN
+  // mandates against the agent-signed CLOSED mandates (AP2 v0.2 open/closed model).
+  {
+    const sidH = (await api("/session", {})).session_id;
+    const hnp = await api("/scenario", { session_id: sidH, id: "human_not_present" });
+    check("human-not-present order completed (agent-signed closed mandates)", hnp.outcome === "order_created", hnp.detail?.order);
+    const portalH: any = await (await fetch(`${URLS.merchantPortal}/api/portal/state`)).json();
+    const orderH = portalH.merchants.find((m: any) => m.id === "wavelength")?.orders.find((o: any) => o.id === hnp.detail?.order);
+    check("merchant verified the Open Checkout Mandate (allowed_merchants + line_items)", /valid · constraints satisfied/.test(orderH?.evidence?.verification?.open_checkout_mandate ?? ""), orderH?.evidence?.verification?.open_checkout_mandate);
+    check("HNP checkout mandate is a dSD-JWT chain (open root ~~ closed terminal)", (orderH?.evidence?.checkout_mandate ?? "").includes("~~"), /valid dSD-JWT chain/.test(orderH?.evidence?.verification?.checkout_mandate ?? "") ? "chain verified" : "no chain");
+    const pspH: any = await (await fetch(`${URLS.paymentProvider}/api/psp/state`)).json();
+    const txnH = pspH.transactions.find((t: any) => t.agent_presence?.modality === "human_not_present");
+    check("PSP independently verified the Open Payment Mandate (amount_range + reference)", /valid/.test(txnH?.mandate_verification?.open_payment_mandate ?? ""), txnH?.mandate_verification?.open_payment_mandate);
+    check("PSP recorded human-not-present modality", txnH?.agent_presence?.modality === "human_not_present");
+  }
   check("merchant ran Know-Your-Agent lookup", /registered/.test(order?.evidence?.verification?.kya ?? ""), order?.evidence?.verification?.kya);
   check("PSP enforced token-bound spend policy", /within token-bound scope/.test(txn?.mandate_verification?.spend_policy ?? ""));
   check("PSP recorded velocity check + rail", !!txn?.mandate_verification?.velocity && txn?.rail === "card_network", `${txn?.mandate_verification?.velocity} · ${txn?.rail}`);
@@ -276,14 +288,55 @@ async function main() {
     check("evidence bundle exports mandates + chained events", !!bundle.mandates?.checkout_sd_jwt && bundle.events?.length === audit.length);
   }
 
-  console.log("\n— 9. Workflow scenarios (approval inbox · standing intent)");
+  console.log("\n— 9. Workflow scenarios (approval inbox · standing intent · open-mandate enforcement)");
   {
     const sa = (await api("/session", {})).session_id;
     const appr = await api("/scenario", { session_id: sa, id: "approval" });
     check("approval workflow: blocked → inbox → approved → completed", appr.outcome === "approved_after_review", appr.detail?.order);
     const sb = (await api("/session", {})).session_id;
     const sub = await api("/scenario", { session_id: sb, id: "subscription" });
-    check("standing intent: 2 cycles under ONE IntentMandate", sub.outcome === "subscription_cycles_completed" && sub.detail?.reused === true, (sub.detail?.orders ?? []).join(", "));
+    check("standing intent: 2 cycles under ONE Open Payment Mandate (agent_recurrence)", sub.outcome === "subscription_cycles_completed" && sub.detail?.reused === true && sub.detail?.occurrences === 2, `occurrences=${sub.detail?.occurrences} · ${(sub.detail?.orders ?? []).join(", ")}`);
+    const sc = (await api("/session", {})).session_id;
+    const overCap = await api("/scenario", { session_id: sc, id: "hnp_over_cap" });
+    check("HNP: PSP rejects a buy over the Open Payment Mandate amount_range", overCap.outcome === "rejected" && /mandate_scope_mismatch|amount|exceeds/.test(JSON.stringify(overCap.detail)), overCap.detail?.error);
+    const sd = (await api("/session", {})).session_id;
+    const mb = await api("/scenario", { session_id: sd, id: "hnp_merchant_blocked" });
+    check("HNP: merchant rejects a checkout outside open_checkout allowed_merchants", mb.outcome === "rejected" && /mandate_scope_mismatch|allowed_merchants|not in/.test(JSON.stringify(mb.detail)), mb.detail?.error);
+    const se = (await api("/session", {})).session_id;
+    const drop = await api("/scenario", { session_id: se, id: "hnp_price_drop" });
+    check("HNP: pre-authorized agent buys autonomously on a price-drop trigger", drop.outcome === "order_created" && drop.detail?.trigger === "price_drop" && /^ord_/.test(drop.detail?.order ?? ""), `bought @ $${drop.detail?.new_price} → ${drop.detail?.order}`);
+  }
+
+  console.log("\n— 10. Live human-not-present flow: end-to-end autonomous (manual, no LLM) + per-step");
+  {
+    // End-to-end: ONE call, the agent does search → pick → checkout → sign → pay.
+    const sx = (await api("/session", {})).session_id;
+    const auto = await api("/autonomous", { session_id: sx, text: "noise cancelling headphones under $300, 2 day delivery" });
+    check("HNP autonomous: one call completes the whole purchase (no human clicks)", /^ord_/.test(auto.order?.id ?? ""), `${auto.product} → ${auto.order?.id}`);
+    check("HNP autonomous: receipts carry open checkout + open payment mandates", !!auto.receipts?.open_checkout_mandate && !!auto.receipts?.open_payment_mandate, JSON.stringify(auto.receipts));
+    // Per-step variant still works (toggle at /intent, agent signs at confirm).
+    const sh = (await api("/session", {})).session_id;
+    const hi = await api("/intent", { session_id: sh, text: "noise cancelling headphones under $300, 2 day delivery", human_present: false });
+    check("HNP live: open Checkout Mandate minted up front", /^ocm_/.test(hi.openCheckoutMandateId ?? ""), hi.openCheckoutMandateId);
+    await api("/select", { session_id: sh, product_id: "cadence-anc-pro", merchant_id: "wavelength" });
+    await api("/checkout", { session_id: sh });
+    await api("/pay", { session_id: sh });
+    const conf = await api("/pay/confirm", { session_id: sh, human_present: false });
+    check("HNP live: autonomous purchase completes (agent signs closed mandates)", /^ord_/.test(conf.order?.id ?? ""), conf.order?.id);
+    check("HNP live: receipts carry the open checkout + open payment mandates", !!conf.receipts?.open_checkout_mandate && !!conf.receipts?.open_payment_mandate, JSON.stringify(conf.receipts));
+  }
+
+  console.log("\n— 11. Interactive HNP authorize: user picks merchants + payment method, agent runs autonomously");
+  {
+    const si = (await api("/session", {})).session_id;
+    const prep = await api("/autonomy/prepare", { session_id: si, text: "noise cancelling headphones under $300, 2 day delivery" });
+    check("authorize step offers merchants to choose", Array.isArray(prep.merchants) && prep.merchants.length >= 1, (prep.merchants ?? []).map((m: any) => m.id).join(", "));
+    check("authorize step offers payment methods", Array.isArray(prep.payment_methods) && prep.payment_methods.length >= 1, String(prep.payment_methods?.length));
+    // Authorize with a SINGLE chosen merchant + a chosen method → agent buys only there.
+    const chosen = prep.merchants.find((m: any) => m.id === "wavelength") ?? prep.merchants[0];
+    const r = await api("/autonomy/authorize", { session_id: si, merchant_ids: [chosen.id], method_id: "pm_visa_4291" });
+    check("authorize → agent buys autonomously at the chosen merchant", /^ord_/.test(r.order?.id ?? "") && r.allowed_merchants?.length === 1, `${r.product} @ ${r.merchant} → ${r.order?.id}`);
+    check("interactive HNP receipts carry open mandates", !!r.receipts?.open_checkout_mandate && !!r.receipts?.open_payment_mandate, JSON.stringify(r.receipts));
   }
 
   console.log(`\n${"=".repeat(60)}\n${failed === 0 ? "ALL PASSED" : "FAILURES"}: ${passed} passed, ${failed} failed\n`);

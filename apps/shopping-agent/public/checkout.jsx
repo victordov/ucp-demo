@@ -113,7 +113,7 @@ function CheckoutCard(props) {
           </button>
         )}
         <div className="co-mandate-hint">
-          <Icon name="seal" size={12} /> {paid ? "Payment Mandate executed · see the receipt below" : (mandateHint || "Cart Mandate sealed")}
+          <Icon name="seal" size={12} /> {paid ? "Payment Mandate executed · see the receipt below" : (mandateHint || "Checkout Mandate ready to sign")}
           {!paid && rail === "rtp" && <span> · settles via <b>RTP</b> (wallet policy)</span>}
         </div>
       </div>
@@ -142,28 +142,42 @@ function RtpMark({ size = 16 }) {
  *                 | wallet.change_method | wallet.enroll | wallet.enrolled
  * parent → child: wallet.init | wallet.update | wallet.enroll_options | wallet.error
  */
-function WalletSheetFrame({ walletOrigin, total, address, merchant, method, methods, passkey, onClose, onConfirm, onChangeMethod, onEnrollOptions, onEnrollComplete }) {
+function WalletSheetFrame({ walletOrigin, total, address, merchant, method, methods, passkey, skipPasskeyEnroll, onPasskeySkipped, onClose, onConfirm, onChangeMethod, onEnrollOptions, onEnrollComplete }) {
   const frameRef = React.useRef(null);
   const [height, setHeight] = React.useState(420);
+  const [loadError, setLoadError] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
+  const gotReady = React.useRef(false);
   // Latest props for the message handler without re-binding the listener.
   const stateRef = React.useRef(null);
-  stateRef.current = { total, address, merchant, method, methods, passkey };
+  stateRef.current = { total, address, merchant, method, methods, passkey, skipPasskeyEnroll };
+
+  // If the sheet never signals "ready" (mixed content, CSP, blocked third-party
+  // storage…), show a retry fallback instead of a hanging, empty scrim.
+  React.useEffect(() => {
+    gotReady.current = false;
+    setLoadError(false);
+    const t = setTimeout(() => { if (!gotReady.current) setLoadError(true); }, 8000);
+    return () => clearTimeout(t);
+  }, [reloadKey, walletOrigin]);
 
   React.useEffect(() => {
     let disposed = false;
+    const cleanWalletOrigin = new URL(walletOrigin).origin;
     async function onMsg(e) {
-      if (e.origin !== walletOrigin || disposed) return; // origin pinning
+      if (e.origin !== cleanWalletOrigin || disposed) return; // origin pinning
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
-      const post = (m) => frameRef.current && frameRef.current.contentWindow.postMessage(m, walletOrigin);
+      const post = (m) => frameRef.current && frameRef.current.contentWindow.postMessage(m, cleanWalletOrigin);
       const msg = e.data || {};
       try {
-        if (msg.type === "wallet.ready") post({ type: "wallet.init", data: stateRef.current });
+        if (msg.type === "wallet.ready") { gotReady.current = true; setLoadError(false); post({ type: "wallet.init", data: stateRef.current }); }
         else if (msg.type === "wallet.resize" && msg.height) setHeight(Math.max(240, Math.min(700, msg.height)));
         else if (msg.type === "wallet.close") onClose();
         else if (msg.type === "wallet.confirm") {
           // Native payment-sheet pattern (Apple Pay / Google Pay): on success the
           // sheet shows a brief ✓ confirmation and is then dismissed by the
           // parent — it never stays interactive after payment.
+          if (msg.skipped_passkey && onPasskeySkipped) onPasskeySkipped(); // remember "pay without Touch ID" for the session
           const ok = await onConfirm(msg.assertion || null);
           if (ok) post({ type: "wallet.success" });
         }
@@ -180,15 +194,62 @@ function WalletSheetFrame({ walletOrigin, total, address, merchant, method, meth
 
   return (
     <div className="sheet-scrim">
-      <iframe
-        ref={frameRef}
-        className="wallet-frame"
-        title="Walletly — secure payment"
-        src={walletOrigin + "/sheet.html"}
-        allow="payment; publickey-credentials-get; publickey-credentials-create"
-        sandbox="allow-scripts allow-popups allow-same-origin allow-forms"
-        style={{ height }}
-      />
+      {loadError ? (
+        <div className="wallet-frame" role="alert" style={{ height: 240, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
+          <div style={{ fontWeight: 600 }}>Couldn’t load the secure payment sheet</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 320 }}>Check your connection, or that the wallet origin is reachable over HTTPS, then try again.</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button type="button" className="pay-btn" style={{ width: "auto", padding: "0 18px", height: 38 }} onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+            <button type="button" className="co-edit" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <iframe
+          key={reloadKey}
+          ref={frameRef}
+          className="wallet-frame"
+          title="Walletly — secure payment"
+          src={walletOrigin + "/sheet.html?r=" + reloadKey}
+          allow="payment; publickey-credentials-get; publickey-credentials-create"
+          sandbox="allow-scripts allow-popups allow-same-origin allow-forms"
+          style={{ height }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ============ 3-D Secure step-up — the bank's challenge page, framed ============
+ * When the issuer requires Strong Customer Authentication, the agent returns the
+ * bank's continue_url instead of an order. We frame it (cross-origin, sandboxed)
+ * and wait for the page to post its result; the parent then resolves the
+ * challenge + retries the authorization server-side. */
+function ThreeDSModal({ continueUrl, amount, onResult }) {
+  const pspOrigin = React.useMemo(() => { try { return new URL(continueUrl).origin; } catch { return null; } }, [continueUrl]);
+  const cb = React.useRef(onResult); cb.current = onResult;
+  React.useEffect(() => {
+    function onMsg(e) {
+      if (!pspOrigin || e.origin !== pspOrigin) return; // origin-pinned to the PSP
+      const msg = e.data || {};
+      if (msg.type === "threeds.result") cb.current(msg.outcome === "success" ? "success" : "cancelled");
+    }
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [pspOrigin]);
+  return (
+    <div className="sheet-scrim">
+      <div style={{ width: 380, maxWidth: "100%" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#fff", fontSize: 12.5, marginBottom: 10, opacity: .9 }}>
+          <Icon name="lock" size={13} /> Your bank · 3-D Secure{amount != null ? " · " + SHOPPY.money(amount) : ""}
+        </div>
+        <iframe
+          className="wallet-frame"
+          title="3-D Secure — bank verification"
+          src={continueUrl}
+          sandbox="allow-scripts allow-same-origin allow-forms"
+          style={{ height: 360, width: "100%" }}
+        />
+      </div>
     </div>
   );
 }

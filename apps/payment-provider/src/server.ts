@@ -15,7 +15,16 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateSigningKey, randomId, jwkToPublicKey, jwsVerifyCompact } from "../../../packages/common/src/crypto.ts";
+import { generateSigningKey, randomId, jwkToPublicKey, jwsVerifyCompact, jwsSignCompact } from "../../../packages/common/src/crypto.ts";
+import { sdJwtVerify } from "../../../packages/common/src/sdjwt.ts";
+import {
+  hashClosedMandate,
+  PAYMENT_MANDATE_VCT,
+  verifyOpenPaymentMandate,
+  evaluatePaymentConstraints,
+  openMandateDigest,
+} from "../../../packages/common/src/ap2.ts";
+import { isChain, verifyDelegateChain } from "../../../packages/common/src/dsdjwt.ts";
 import {
   mcpHandler,
   callTool,
@@ -26,11 +35,16 @@ import {
   UCP_ERR,
 } from "../../../packages/common/src/jsonrpc.ts";
 import { PORTS, URLS, defaultTrust, AGENT_PROFILE_URL, CREDENTIALS_PROFILE_URL, PAYMENTS_PROFILE_URL } from "../../../packages/common/src/config.ts";
-import { UCP_VERSION, type CompositeToken, type PaymentMandatePayload } from "../../../packages/common/src/types.ts";
+import { UCP_VERSION, type CompositeToken, type PaymentMandatePayload, type PaymentReceiptPayload, type OpenPaymentMandatePayload } from "../../../packages/common/src/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const serviceKey = generateSigningKey("paystream-psp-2026");
+
+/* Recurrence/budget ledger for Open Payment Mandates (payment.agent_recurrence /
+ * payment.budget) — tracks occurrence count + cumulative spend per open mandate
+ * so the PSP can bound autonomous reuse across cycles. */
+const openMandateLedger = new Map<string, { count: number; spent: number }>();
 
 /* ---------------- Agent Registry — "Know Your Agent" + reputation ----------------
  * The network-level trust layer: agents register (KYA, like KYC for agents),
@@ -100,6 +114,7 @@ interface Txn {
   rail: "card_network" | "rtp";
   agent?: string; // agent profile URL (from the payment mandate)
   mandate_jws?: string; // the verified PaymentMandate (drill-in decoding in the dashboard)
+  payment_receipt?: string; // signed AP2 Payment Receipt (dispute evidence)
   payment_mandate_id: string;
   mandate_verification: Record<string, string>;
   agent_presence: { ai_agent_involved: boolean; modality: "human_present" | "human_not_present" };
@@ -135,21 +150,46 @@ const tools = {
         throw new RpcError(-32600, "credential must be an AP2 composite token", UCP_ERR("invalid_credential", "missing network_token or payment_mandate"), 400);
 
       const verification: Record<string, string> = {};
+      const humanPresent = p.human_present !== false;
 
-      // 1. Verify the PaymentMandate — signed by the user's device key (published by the CP)
       const cpProfile = await fetchUcpProfile(CREDENTIALS_PROFILE_URL);
+      const resolveCpKey = (kid: string) => {
+        const jwk = findJwk(cpProfile, kid);
+        return jwk ? jwkToPublicKey(jwk) : undefined;
+      };
+
+      // 1. Verify the Payment Mandate. Human-not-present → a dSD-JWT chain: open
+      //    (user-signed root, cnf=agent) ~~ closed (agent-signed terminal), the
+      //    terminal sd_hash-bound to the root. Human-present → a single SD-JWT+kb
+      //    signed by the CP, key-bound to the user device key.
       let mandate: PaymentMandatePayload;
+      let openPay: OpenPaymentMandatePayload | undefined;
       try {
-        const { payload, header } = jwsVerifyCompact(credential.payment_mandate, (kid) => {
-          const jwk = findJwk(cpProfile, kid);
-          return jwk ? jwkToPublicKey(jwk) : undefined;
-        });
-        mandate = payload as PaymentMandatePayload;
-        verification.signature = `valid (kid=${header.kid} via ${CREDENTIALS_PROFILE_URL})`;
+        if (isChain(credential.payment_mandate)) {
+          const chain = verifyDelegateChain(credential.payment_mandate, resolveCpKey, { aud: p.merchant_profile, nonce: p.checkout_id });
+          openPay = chain.open as OpenPaymentMandatePayload;
+          mandate = chain.closed as unknown as PaymentMandatePayload;
+          verification.signature = "valid dSD-JWT chain (user-signed open root → agent-signed closed; sd_hash-bound)";
+        } else {
+          const { claims, issuerKid } = sdJwtVerify(credential.payment_mandate, resolveCpKey, { aud: p.merchant_profile, nonce: p.checkout_id });
+          mandate = claims as unknown as PaymentMandatePayload;
+          verification.signature = `valid SD-JWT+kb (issuer kid=${issuerKid} via ${CREDENTIALS_PROFILE_URL}, key-bound to user device, aud=${p.merchant_profile})`;
+        }
       } catch (e: any) {
-        log("authorize.declined", `mandate_invalid_signature: ${e.message}`);
-        throw new RpcError(-32000, "Payment mandate invalid", UCP_ERR("mandate_invalid_signature", e.message), 401);
+        const code = /mandate_expired/.test(e.message)
+          ? "mandate_expired"
+          : /aud mismatch|nonce mismatch|sd_hash|key-binding/.test(e.message)
+            ? "mandate_scope_mismatch"
+            : "mandate_invalid_signature";
+        log("authorize.declined", `${code}: ${e.message}`);
+        throw new RpcError(-32000, "Payment mandate invalid", UCP_ERR(code, e.message), 401);
       }
+      // Modality: an autonomous (human-not-present) payment MUST ride an open→closed chain.
+      if (!humanPresent && !openPay)
+        throw new RpcError(-32000, "Open mandate required", UCP_ERR("mandate_required", "human-not-present payment requires an open→closed mandate chain"), 401);
+      // vct must match exactly (AP2 mandate versioning)
+      if (mandate.vct !== PAYMENT_MANDATE_VCT)
+        throw new RpcError(-32000, "Unexpected payment mandate type", UCP_ERR("mandate_invalid_signature", `vct ${mandate.vct}`), 401);
 
       // 1b. Know Your Agent: the agent named in the mandate must be registered
       //     and in good standing (suspension + reputation gate).
@@ -183,18 +223,26 @@ const tools = {
         throw new RpcError(-32000, "Payment mandate expired", UCP_ERR("mandate_expired", mandate.expires_at), 401);
       verification.expiry = `valid until ${mandate.expires_at}`;
 
-      if (mandate.amount.amount !== amount?.amount || mandate.amount.currency !== amount?.currency)
-        throw new RpcError(-32000, "Amount does not match mandate", UCP_ERR("mandate_scope_mismatch", `mandate=${mandate.amount.amount} request=${amount?.amount}`), 401);
+      if (mandate.payment_amount.amount !== amount?.amount || mandate.payment_amount.currency !== amount?.currency)
+        throw new RpcError(-32000, "Amount does not match mandate", UCP_ERR("mandate_scope_mismatch", `mandate=${mandate.payment_amount.amount} request=${amount?.amount}`), 401);
       verification.amount = `${amount.amount} ${amount.currency} (minor units) matches mandate`;
 
-      if (mandate.payee !== p.merchant_profile)
-        throw new RpcError(-32000, "Payee does not match mandate", UCP_ERR("mandate_scope_mismatch", `mandate payee ${mandate.payee} ≠ ${p.merchant_profile}`), 401);
-      verification.payee = `bound to ${mandate.payee}`;
+      // transaction_id MUST equal the hash of the merchant-signed checkout (the
+      // merchant forwards that hash) — binds the payment to the exact signed terms.
+      if (p.checkout_hash && mandate.transaction_id !== p.checkout_hash)
+        throw new RpcError(-32000, "Payment mandate not bound to this checkout", UCP_ERR("mandate_scope_mismatch", `transaction_id ${mandate.transaction_id} ≠ checkout hash ${p.checkout_hash}`), 401);
+      verification.checkout_binding = `transaction_id = checkout hash ${String(mandate.transaction_id).slice(0, 16)}…`;
+
+      if (mandate.payee?.website !== p.merchant_profile)
+        throw new RpcError(-32000, "Payee does not match mandate", UCP_ERR("mandate_scope_mismatch", `mandate payee ${mandate.payee?.website} ≠ ${p.merchant_profile}`), 401);
+      verification.payee = `bound to ${mandate.payee?.website}`;
 
       if (mandate.checkout_id !== p.checkout_id)
         throw new RpcError(-32000, "Checkout does not match mandate", UCP_ERR("mandate_scope_mismatch", `mandate checkout ${mandate.checkout_id} ≠ ${p.checkout_id}`), 401);
       verification.checkout = `bound to ${mandate.checkout_id}`;
-      verification.cart_linkage = `payment mandate links cart mandate ${mandate.cart_mandate}`;
+      // The open↔closed binding is enforced cryptographically by the chain's
+      // sd_hash (checked in verifyDelegateChain) — no separate digest check needed.
+      verification.open_payment_binding = openPay ? "closed mandate bound to open via sd_hash chain ✓" : "n/a (human-present)";
 
       // 3. Pull credentials from the CP against the single-use token
       const identity = { key: serviceKey, profileUrl: PAYMENTS_PROFILE_URL };
@@ -207,27 +255,25 @@ const tools = {
         throw new RpcError(-32000, "Credential release failed", UCP_ERR("payment_declined", e.message), 402);
       }
 
-      // 2b. Verified intent across parties: if the original IntentMandate is
-      //     presented, the PSP independently validates the purchase against the
-      //     user's signed intent (budget ceiling + validity), not just the
-      //     payment mandate.
-      if (p.intent_mandate) {
-        try {
-          const { payload: im } = jwsVerifyCompact(p.intent_mandate, (kid) => {
-            const jwk = findJwk(cpProfile, kid);
-            return jwk ? jwkToPublicKey(jwk) : undefined;
-          });
-          const intent = im as any;
-          if (new Date(intent.expires_at).getTime() < Date.now())
-            throw new Error(`intent mandate expired ${intent.expires_at}`);
-          const maxTotal = intent.constraints?.max_total?.amount;
-          if (maxTotal != null && amount.amount > maxTotal)
-            throw new Error(`amount ${amount.amount} exceeds intent budget ${maxTotal}`);
-          verification.intent_mandate = `valid (id=${intent.id}) · amount within user's signed budget${maxTotal != null ? ` (≤ ${maxTotal})` : ""}`;
-        } catch (e: any) {
-          log("authorize.declined", `intent_mandate invalid: ${e.message}`);
-          throw new RpcError(-32000, "Intent mandate validation failed", UCP_ERR("intent_mandate_invalid", e.message), 401);
+      // 2b. Open Payment Mandate constraints (human-not-present): the PSP
+      //     independently checks that this charge satisfies the user-signed open
+      //     mandate — amount_range/budget, agent_recurrence (occurrence count),
+      //     allowed_payees, and payment.reference (binding to the open checkout).
+      if (openPay) {
+        const ledger = openMandateLedger.get(openPay.id) ?? { count: 0, spent: 0 };
+        const ev = evaluatePaymentConstraints(
+          { amount, payee: mandate.payee, openCheckoutDigest: p.open_checkout_digest },
+          openPay,
+          { occurrence: ledger.count + 1, priorSpend: ledger.spent }
+        );
+        if (!ev.ok) {
+          log("authorize.declined", `open_payment_mandate constraint failed: ${ev.error}`);
+          throw new RpcError(-32000, "Open Payment Mandate constraint failed", UCP_ERR("mandate_scope_mismatch", ev.error ?? "constraint unmet"), 401);
         }
+        openMandateLedger.set(openPay.id, { count: ledger.count + 1, spent: ledger.spent + amount.amount });
+        verification.open_payment_mandate = `valid (id=${openPay.id}) · ${ev.checked.join(", ")}`;
+      } else {
+        verification.open_payment_mandate = "n/a (human-present — user signed the closed Payment Mandate directly)";
       }
 
       // 3b. Spend-policy re-check (defense in depth): the CP bound the user's
@@ -280,6 +326,21 @@ const tools = {
 
       const txn: Txn = makeTxn(p, amount, creds, mandate, verification, "authorized", args?.signals);
       txn.rail = rail; txn.agent = agent;
+
+      // AP2 Payment Receipt: the MPP MUST return a signed receipt once it has
+      // accepted the Payment Mandate. reference = hash of the closed mandate.
+      const paymentReceipt: PaymentReceiptPayload = {
+        status: "Success",
+        iss: PAYMENTS_PROFILE_URL,
+        iat: Math.floor(Date.now() / 1000),
+        reference: hashClosedMandate(credential.payment_mandate),
+        payment_id: txn.transaction_id,
+        psp_confirmation_id: randomId("pspc", 12),
+        network_confirmation_id: randomId("netc", 12),
+      };
+      const paymentReceiptJws = jwsSignCompact(paymentReceipt, serviceKey, "ap2-receipt+jwt");
+      txn.payment_receipt = paymentReceiptJws;
+
       txns.set(txn.transaction_id, txn);
       log("authorize_payment", `${txn.transaction_id} ${txn.amount} ${txn.currency} authorized for ${p.merchant_id} via ${rail} — mandate ${mandate.id} OK`, verification);
       return {
@@ -289,6 +350,8 @@ const tools = {
         rail,
         verification,
         agent_presence: txn.agent_presence,
+        payment_receipt: paymentReceiptJws,
+        payment_receipt_payload: paymentReceipt,
       };
     },
   },
@@ -447,19 +510,37 @@ app.get("/.well-known/ucp", (_req, res) => {
 
 app.post("/mcp", mcpHandler({ serverName: "payment-provider", tools: tools as any, trustedProfiles: defaultTrust }));
 
-// 3DS challenge page — the platform opens this continue_url in a WebView for the user.
+// 3DS challenge page — the platform frames this continue_url so the user can
+// complete Strong Customer Authentication. The page posts its result
+// (success / cancelled) back to the agent origin, which then resolves the
+// challenge with the Credentials Provider and retries the authorization.
+const AGENT_ORIGIN = new URL(URLS.shoppingAgent).origin;
 app.get("/challenge/:id", (req, res) => {
+  const id = String(req.params.id);
+  const t = [...txns.values()].find((x) => x.challenge_id === id);
+  const amount = t ? (t.amount / 100).toLocaleString("en-US", { style: "currency", currency: t.currency || "USD" }) : null;
+  const card = t ? `${String(t.network || "card").toUpperCase()} ••${t.last4 || ""}` : "your card";
+  // Only the agent may frame this bank page.
+  res.set("Content-Security-Policy", `frame-ancestors ${AGENT_ORIGIN}`);
   res.set("Content-Type", "text/html");
-  res.send(`<!doctype html><meta charset=utf8><title>3-D Secure</title>
-  <body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0">
-  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:34px;max-width:380px;text-align:center">
-    <div style="font-size:13px;letter-spacing:.1em;color:#94a3b8">YOUR BANK · 3-D SECURE</div>
-    <h2 style="margin:10px 0 4px">Verify it's you</h2>
-    <p style="color:#94a3b8;font-size:14px">A purchase by your AI shopping agent needs Strong Customer Authentication. Approve to continue.</p>
-    <div style="font-family:monospace;font-size:12px;color:#64748b">challenge ${req.params.id}</div>
-    <p style="font-size:34px;margin:10px 0">🔐</p>
-    <div style="color:#22c55e;font-size:13px">This is a simulated bank step-up page (no real auth).</div>
-  </div></body>`);
+  res.send(`<!doctype html><html lang=en><meta charset=utf8><title>3-D Secure</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;margin:0">
+  <main role="main" style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:30px 28px;max-width:340px;text-align:center">
+    <div style="font-size:12px;letter-spacing:.12em;color:#94a3b8">YOUR BANK · 3-D SECURE</div>
+    <h1 style="margin:10px 0 4px;font-size:20px">Verify it's you</h1>
+    <p style="color:#94a3b8;font-size:14px;line-height:1.5">A purchase by your AI shopping agent needs Strong Customer Authentication.${amount ? ` Approve <b style="color:#e2e8f0">${amount}</b> on ${card}.` : ""}</p>
+    <div style="font-size:30px;margin:8px 0">🔐</div>
+    <button id="ok" type="button" style="width:100%;height:46px;border:none;border-radius:12px;background:#22c55e;color:#06250f;font:600 15px system-ui;cursor:pointer">Approve</button>
+    <button id="no" type="button" style="width:100%;height:40px;margin-top:8px;border:none;background:none;color:#94a3b8;font:500 13px system-ui;cursor:pointer">Cancel</button>
+    <div style="color:#64748b;font-size:11px;margin-top:12px">Simulated bank step-up · challenge ${id.slice(0, 14)}…</div>
+  </main>
+  <script>
+    var AGENT = ${JSON.stringify(AGENT_ORIGIN)}, ID = ${JSON.stringify(id)};
+    function send(outcome){ try { parent.postMessage({ type: "threeds.result", challenge_id: ID, outcome: outcome }, AGENT); } catch (e) {} }
+    document.getElementById("ok").onclick = function(){ this.disabled = true; this.textContent = "Approved ✓"; this.style.opacity = ".8"; send("success"); };
+    document.getElementById("no").onclick = function(){ send("cancelled"); };
+  </script></body></html>`);
 });
 
 app.get("/api/psp/state", (_req, res) => {

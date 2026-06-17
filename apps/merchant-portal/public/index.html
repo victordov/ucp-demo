@@ -93,7 +93,7 @@ function render(){
           <div style="font-size:12px;color:var(--muted);margin:4px 0">${o.items.map(i=>i.quantity+'× '+esc(i.title)).join(', ')} · ${esc(o.buyer?.email||'')}</div>
           <div style="font-size:12px">payment: <span class="mono">${o.payment.psp_transaction_id}</span> (${o.payment.status}, •••• ${o.payment.last4})${o.tracking?` · ${o.tracking.carrier} <span class="mono">${o.tracking.number}</span>`:''} · <a href="${o.permalink_url}" target="_blank" class="mono">permalink</a></div>
           <details><summary style="cursor:pointer;font-size:12px">AP2 evidence (dispute-ready)</summary>
-            <pre>${esc(JSON.stringify({cart_mandate_id:o.evidence.cart_mandate_id,payment_mandate_id:o.evidence.payment_mandate_id,verification:o.evidence.verification,checkout_mandate:o.evidence.checkout_mandate.slice(0,120)+'…',merchant_authorization:o.evidence.merchant_authorization.slice(0,100)+'…'},null,2))}</pre>
+            <pre>${esc(JSON.stringify({payment_mandate_id:o.evidence.payment_mandate_id,verification:o.evidence.verification,checkout_mandate:o.evidence.checkout_mandate.slice(0,120)+'…',merchant_authorization:o.evidence.merchant_authorization.slice(0,100)+'…'},null,2))}</pre>
           </details>
           ${o.kya?`<div style="font-size:11px;margin:4px 0"><span class="badge ${/suspended|unregistered/.test(o.kya)?'warn':'info'}">KYA</span> buyer agent: ${esc(o.kya)}</div>`:''}
           ${o.status==='confirmed'?`<button class="act" onclick="ship('${m.id}','${o.id}')">Ship now → signed webhook</button>

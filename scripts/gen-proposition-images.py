@@ -139,7 +139,7 @@ layers = [
      [("RFC 9421 req+resp signatures", "live"), ("JWK discovery (.well-known/ucp)", "live"), ("KYA registry + reputation", "live"),
       ("velocity rules (per agent)", "live"), ("OAuth Identity Linking (RFC 8414)", "live"), ("network KYA interop", "road")]),
     ("3 · POLICY & PAYMENTS", TEAL,
-     [("AP2 mandates: Intent/Cart/Payment JWS", "live"), ("Checkout SD-JWT+kb (selective disclosure)", "live"),
+     [("AP2 mandates: Checkout + Payment SD-JWT+kb", "live"), ("selective disclosure + key binding", "live"),
       ("spend policy — enforced at mint · sign · PSP", "live"), ("passkey UV (WebAuthn / SPC)", "live"),
       ("multi-rail: card token / RTP", "live"), ("3-DS escalation (continue_url)", "live"), ("split payments", "road")]),
     ("4 · COMMERCE ADAPTER", AMBER,

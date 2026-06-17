@@ -152,51 +152,31 @@ const TRACE = {
     },
   }),
 
-  intentMandate: () => {
-    const id = ucpId("intent");
-    return {
-      layer: "AP2", tag: "AP2", kind: "mandate",
-      name: "Intent Mandate",
-      method: "VDC · signed",
-      desc: "Your shopping constraints are captured as a user-signed Intent Mandate. It bounds everything the agent is authorized to do — price ceiling, required features, and the delivery window.",
-      payload: {
-        type: "IntentMandate",
-        id,
-        issued_to: "agent:shoppy",
-        constraints: {
-          category: "over-ear headphones",
-          required_features: ["active-noise-cancelling"],
-          max_total: { amount: "300.00", currency: "USD" },
-          delivery_by: "P2D",
-        },
-        human_present: true,
-        expires: nowISO(1000 * 60 * 30),
+  shoppingIntent: () => ({
+    layer: "UCP", tag: "UCP", kind: "request",
+    name: "Shopping Intent · constraints",
+    method: "parse request",
+    desc: "Your request is parsed into shopping constraints — the boundary the agent searches within. In AP2 v0.2 the constraints are not a signed mandate; you authorize the actual purchase later by signing the Checkout + Payment Mandates.",
+    payload: {
+      constraints: {
+        category: "over-ear headphones",
+        required_features: ["active-noise-cancelling"],
+        max_total: { amount: "300.00", currency: "USD" },
+        delivery_by: "P2D",
       },
-      mandate: {
-        kind: "Intent Mandate",
-        id,
-        seal: "user · WebAuthn",
-        rows: [
-          ["category", "over-ear headphones"],
-          ["features", "noise-cancelling"],
-          ["max_total", "$300.00 USD"],
-          ["delivery_by", "≤ 2 days"],
-          ["human_present", "true"],
-        ],
-        sig: "ey" + shortHash(40),
-      },
-    };
-  },
+      human_present: true,
+    },
+  }),
 
   catalogSearch: () => ({
     layer: "UCP", tag: "UCP", kind: "request",
     name: "Catalog Search",
     method: "POST /catalog/search",
-    desc: "A single federated query fans out to all eligible merchants. Results are filtered against the Intent Mandate and ranked by match + price.",
+    desc: "A single federated query fans out to all eligible merchants. Results are filtered against your stated constraints and ranked by match + price.",
     payload: {
       query: "over-ear noise cancelling headphones",
       filters: { price_max: 300, attributes: ["anc", "over-ear"], ship_within_days: 2 },
-      bound_to: "IntentMandate",
+      filtered_by: "constraints",
       returned: 3,
       merchants_queried: 4,
     },
@@ -251,32 +231,33 @@ const TRACE = {
     },
   }),
 
-  cartMandate: (ctx) => {
-    const id = ucpId("cart");
+  checkoutMandate: (ctx) => {
+    const id = ucpId("chk");
     return {
       layer: "AP2", tag: "AP2", kind: "mandate",
-      name: "Cart Mandate",
-      method: "VDC · signed",
-      desc: "The finalized cart — exact items, merchant, and total — is sealed into a Cart Mandate. The merchant counter-signs it, giving cryptographic proof of what was agreed before any money moves.",
+      name: "Checkout Mandate",
+      method: "SD-JWT+kb · signed",
+      desc: "The merchant-signed checkout (merchant_authorization) is sealed into a Checkout Mandate — an SD-JWT+kb the user key-binds with a device biometric. It embeds the full checkout, so the user's signature covers the merchant's: cryptographic proof of exactly what was agreed before any money moves.",
       payload: {
-        type: "CartMandate",
+        type: "CheckoutMandate",
+        vct: "mandate.checkout.1",
         id,
-        derived_from: "IntentMandate",
         checkout_id: ctx.checkoutId,
         merchant: ctx.merchant.domain,
         items: ctx.items.map((i) => ({ name: i.name, qty: i.qty, price: i.price.toFixed(2) })),
         total: { amount: ctx.total.toFixed(2), currency: "USD" },
-        within_intent: true,
+        embeds: "merchant_authorization",
+        within_constraints: true,
       },
       mandate: {
-        kind: "Cart Mandate",
+        kind: "Checkout Mandate",
         id,
-        seal: "user + merchant",
+        seal: "user · WebAuthn (covers merchant sig)",
         rows: [
           ["merchant", ctx.merchant.name],
           ["items", ctx.items.reduce((a, i) => a + i.qty, 0) + " line items"],
           ["total", money(ctx.total)],
-          ["≤ intent max", "$300.00 ✓"],
+          ["≤ your max", "$300.00 ✓"],
         ],
         sig: "ey" + shortHash(40),
       },
@@ -307,11 +288,12 @@ const TRACE = {
       layer: "AP2", tag: "AP2", kind: "mandate",
       name: "Payment Mandate",
       method: "VDC · signed",
-      desc: "Linked to the Cart Mandate, the Payment Mandate authorizes exactly this amount to this merchant via this instrument. Approved with a device biometric in the Google Pay sheet.",
+      desc: "Bound to the signed checkout (transaction_id = hash of the Checkout Mandate's checkout), the Payment Mandate authorizes exactly this amount to this merchant via this instrument. Approved with a device biometric in the Google Pay sheet.",
       payload: {
         type: "PaymentMandate",
+        vct: "mandate.payment.1",
         id,
-        cart_mandate: ctx.cartId,
+        checkout_mandate: ctx.checkoutMandateId,
         handler: "com.google.pay",
         amount: { value: ctx.total.toFixed(2), currency: "USD" },
         payee: ctx.merchant.domain,
@@ -325,7 +307,7 @@ const TRACE = {
           ["handler", "Google Pay"],
           ["amount", money(ctx.total)],
           ["payee", ctx.merchant.name],
-          ["links cart", "✓"],
+          ["binds checkout", "✓"],
         ],
         sig: "ey" + shortHash(40),
       },
@@ -346,7 +328,7 @@ const TRACE = {
         payment: { status: "captured", handler: "com.google.pay", last4: "4291" },
         estimated_delivery: ctx.eta,
       },
-      receipts: { cart_mandate: ctx.cartId, payment_mandate: ctx.payId },
+      receipts: { checkout_mandate: ctx.checkoutMandateId, payment_mandate: ctx.payId },
     },
   }),
 

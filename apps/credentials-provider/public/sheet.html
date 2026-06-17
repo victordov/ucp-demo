@@ -59,8 +59,8 @@
 <div id="root"></div>
 
 <script src="https://unpkg.com/@simplewebauthn/browser@13/dist/bundle/index.umd.min.js"></script>
-<script src="/sheet-config.js"></script>
-<script src="/passkey-client.js"></script>
+<script src="./sheet-config.js"></script>
+<script src="./passkey-client.js"></script>
 <script>
 (() => {
   "use strict";
@@ -76,13 +76,13 @@
   const root = document.getElementById("root");
 
   const SVG = {
-    lock: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
-    pin: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
-    cart: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 12h10.2L20 8H6"/></svg>',
-    finger: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 11a2 2 0 0 1 2 2c0 2.5-.5 5-1.5 7"/><path d="M8.5 13a3.5 3.5 0 0 1 7 0c0 1.5-.2 3.5-.8 5.5"/><path d="M5.5 15.5C5.2 14.7 5 13.9 5 13a7 7 0 0 1 12.3-4.6"/><path d="M19 13c0 1-.1 2-.3 3"/></svg>',
-    chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>',
-    shield: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/></svg>',
-    refresh: '<svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>',
+    lock: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+    pin: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+    cart: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 12h10.2L20 8H6"/></svg>',
+    finger: '<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 11a2 2 0 0 1 2 2c0 2.5-.5 5-1.5 7"/><path d="M8.5 13a3.5 3.5 0 0 1 7 0c0 1.5-.2 3.5-.8 5.5"/><path d="M5.5 15.5C5.2 14.7 5 13.9 5 13a7 7 0 0 1 12.3-4.6"/><path d="M19 13c0 1-.1 2-.3 3"/></svg>',
+    chev: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>',
+    shield: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/></svg>',
+    refresh: '<svg class="spin" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>',
   };
   const gpayMark = '<span class="gpay" style="font-size:19px"><b><span style="color:#4285F4">G</span><span style="color:#EA4335">o</span><span style="color:#FBBC05">o</span><span style="color:#4285F4">g</span><span style="color:#34A853">l</span><span style="color:#EA4335">e</span></b><span style="font-weight:600;margin-left:5px;color:#5F6368">Pay</span></span>';
   const rtpMark = '<span style="display:inline-flex;align-items:center;gap:5px;font-weight:700"><span style="width:18px;height:18px;border-radius:5px;background:#0d9488;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">⚡</span>RTP</span>';
@@ -90,7 +90,7 @@
   // ---- state ----
   let D = null;          // { total, address, merchant, method, methods, passkey }
   let stage = "loading"; // loading | review | method | enroll | auth | success | error
-  let authMsg = "", errMsg = "", switching = false;
+  let authMsg = "", errMsg = "", switching = false, focusedStage = null;
 
   function setStage(s) { stage = s; render(); }
 
@@ -105,7 +105,7 @@
     const head =
       '<div class="head">' + (isRtp ? rtpMark + '<span style="font-size:12px;color:var(--muted)">instant bank transfer · PayStream</span>' : gpayMark) +
       '<span class="origin">' + SVG.lock + ' ' + esc(location.host) + '</span><div class="spacer"></div>' +
-      (closable ? '<button class="x" id="close">✕</button>' : "") + "</div>";
+      (closable ? '<button class="x" id="close" type="button" aria-label="Close"><span aria-hidden="true">✕</span></button>' : "") + "</div>";
 
     let body = "";
     if (stage === "review") {
@@ -118,7 +118,7 @@
         '<div class="row"><div class="ic">' + SVG.pin + '</div><div class="lbl"><div class="t">' + esc(D.address.name) + '</div><div class="s">' + esc(D.address.line1) + ", " + esc(D.address.city) + " " + esc(D.address.state) + "</div></div></div>" +
         '<div class="row"><div class="ic">' + SVG.cart + '</div><div class="lbl"><div class="t">' + esc(D.merchant.name) + '</div><div class="s">' + esc(D.merchant.domain) + "</div></div></div>" +
         '<div class="total"><span class="t">Total</span><span class="v">' + money(D.total) + "</span></div>" +
-        '<button class="confirm" id="confirm">' + SVG.lock + " Confirm · Pay " + money(D.total) + "</button>" +
+        '<button type="button" class="confirm" id="confirm">' + SVG.lock + " Confirm · Pay " + money(D.total) + "</button>" +
         '<div class="note">' + SVG.shield + " " + (enrolled ? "Touch ID confirms an AP2 Payment Mandate" : pkOn ? "Authorizes an AP2 Payment Mandate · set up Touch ID for real verification" : "Authorizes an AP2 Payment Mandate (simulated)") + "</div>";
     } else if (stage === "method") {
       body = '<div class="mtitle">Choose how to pay</div>' +
@@ -129,23 +129,25 @@
               (m.behavior === "challenge" ? " · triggers 3-D Secure" : m.behavior === "decline" ? " · always declines (test)" : "") + (m.default ? " · default" : "") + "</div></div>" +
             (D.method && m.id === D.method.id ? '<span class="check">✓</span>' : "") + "</div>"
         ).join("") +
-        '<button class="skip" id="back">← Back</button>';
+        '<button type="button" class="skip" id="back">← Back</button>';
     } else if (stage === "enroll") {
-      body = '<div class="bio"><div class="ring">' + SVG.finger + '</div><div class="h">Verify this purchase with Touch ID</div>' +
+      body = '<div class="bio" role="status" aria-live="polite"><div class="ring">' + SVG.finger + '</div><div class="h">Verify this purchase with Touch ID</div>' +
         '<div class="d">Set up a passkey so your fingerprint cryptographically authorizes these exact terms (' + money(D.total) + " to " + esc(D.merchant.name) + ").</div></div>" +
-        '<button class="confirm" id="enroll">' + SVG.finger.replace('width="28" height="28"', 'width="16" height="16"') + " Set up Touch ID &amp; pay</button>" +
-        '<button class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
+        '<button type="button" class="confirm" id="enroll">' + SVG.finger.replace('width="28" height="28"', 'width="16" height="16"') + " Set up Touch ID &amp; pay</button>" +
+        '<button type="button" class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
     } else if (stage === "error") {
-      body = '<div class="bio"><div class="ring err">✕</div><div class="h">Couldn’t verify</div><div class="d">' + esc(errMsg) + "</div></div>" +
-        '<button class="confirm" id="retry">' + SVG.refresh + " Try again</button>" +
-        '<button class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
+      const canHybrid = D.passkey && D.passkey.enabled && D.passkey.enrolled;
+      body = '<div class="bio" role="status" aria-live="polite"><div class="ring err"><span aria-hidden="true">✕</span></div><div class="h">Couldn’t verify</div><div class="d">' + esc(errMsg) + "</div></div>" +
+        '<button type="button" class="confirm" id="retry">' + SVG.refresh + " Try again</button>" +
+        (canHybrid ? '<button type="button" class="skip" id="hybrid">Use a phone or another device</button>' : "") +
+        '<button type="button" class="skip" id="simulate">Pay without Touch ID (simulated)</button>';
     } else if (stage === "auth") {
-      body = '<div class="bio"><div class="ring">' + SVG.finger + '</div><div class="h">' + esc(authMsg || "Verify with biometric") + '</div>' +
+      body = '<div class="bio" role="status" aria-live="polite"><div class="ring">' + SVG.finger + '</div><div class="h">' + esc(authMsg || "Verify with biometric") + '</div>' +
         '<div class="d">Authorizing ' + money(D.total) + " to " + esc(D.merchant.name) + "…</div></div>";
     } else if (stage === "success") {
       // Like the native Apple Pay / Google Pay sheets: a brief ✓ confirmation,
       // then the parent dismisses the sheet — it is no longer interactive.
-      body = '<div class="bio"><div class="ring ok">✓</div><div class="h">Payment confirmed</div>' +
+      body = '<div class="bio" role="status" aria-live="polite"><div class="ring ok"><span aria-hidden="true">✓</span></div><div class="h">Payment confirmed</div>' +
         '<div class="d">' + money(D.total) + " paid to " + esc(D.merchant.name) + ".</div></div>";
     }
 
@@ -157,37 +159,69 @@
     on("back", () => setStage("review"));
     on("enroll", enrollThenPay);
     on("retry", () => setStage("review"));
-    on("simulate", () => { authMsg = "Authorizing…"; setStage("auth"); setTimeout(() => post({ type: "wallet.confirm", assertion: null }), 1200); });
+    on("simulate", () => simulatedApprove(true));
+    on("hybrid", () => runAuthCeremony("hybrid"));
     if (stage === "review" && D.methods && D.methods.length > 1) on("pick", () => setStage("method"));
     if (stage === "method") root.querySelectorAll("[data-mid]").forEach((el) => {
       el.onclick = () => { if (switching) return; switching = true; render(); post({ type: "wallet.change_method", id: el.getAttribute("data-mid") }); };
     });
+    // On a stage change (not same-stage re-renders), move focus to the primary
+    // control so keyboard + screen-reader users land on the main action.
+    if (stage !== focusedStage) {
+      focusedStage = stage;
+      const primary = document.getElementById("confirm") || document.getElementById("enroll") || document.getElementById("retry");
+      if (primary) primary.focus();
+    }
     resize();
   }
 
   function resize() { post({ type: "wallet.resize", height: document.body.scrollHeight }); }
 
+  // Map raw WebAuthn / SimpleWebAuthn errors to human, actionable copy.
+  function friendlyError(e) {
+    const name = (e && e.name) || "", code = (e && e.code) || "";
+    if (code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED" || name === "InvalidStateError")
+      return "This device already has a passkey for this site. Try paying, or remove it in Walletly and set it up again.";
+    if (code === "ERROR_INVALID_DOMAIN" || code === "ERROR_INVALID_RP_ID" || name === "SecurityError")
+      return "This site’s domain isn’t valid for passkeys. Make sure you opened the exact URL (localhost or your tunnel), then try again.";
+    if (name === "NotAllowedError" || name === "AbortError")
+      return "The request was cancelled or timed out. Tap “Try again” when you’re ready.";
+    if (name === "NotSupportedError")
+      return "This device can’t create the required passkey — you can pay without Touch ID instead.";
+    return (e && e.message) || "Verification was cancelled.";
+  }
+
+  // Simulated (no-passkey) approval. `skipped` marks that the user explicitly
+  // declined Touch ID, so the parent can stop re-prompting for the session.
+  function simulatedApprove(skipped) {
+    authMsg = "Authorizing…"; setStage("auth");
+    setTimeout(() => post({ type: "wallet.confirm", assertion: null, skipped_passkey: !!skipped }), 1200);
+  }
+
   // ---- ceremonies (run on the WALLET origin — the whole point of the iframe) ----
-  async function runAuthCeremony() {
-    authMsg = "Touch ID…"; setStage("auth");
+  // prefer === "hybrid" → authorize with a phone / QR instead of macOS Touch ID.
+  async function runAuthCeremony(prefer) {
+    authMsg = prefer === "hybrid" ? "Waiting for your other device…" : "Touch ID…"; setStage("auth");
     try {
       const { assertion, method } = await window.Passkey.auth({
         options: D.passkey.auth_options.options,
         payment: D.passkey.auth_options.payment,
         amount: Number(D.total).toFixed(2),
         payee: D.merchant.name,
+        prefer,
       });
       authMsg = method === "spc" ? "Confirmed via Secure Payment Confirmation" : "Verified with Touch ID"; render();
       post({ type: "wallet.confirm", assertion, method });
-    } catch (e) { errMsg = e.message || "Verification was cancelled."; setStage("error"); }
+    } catch (e) { errMsg = friendlyError(e); setStage("error"); }
   }
 
   function confirm() {
     errMsg = "";
     const pkOn = D.passkey && D.passkey.enabled;
     const enrolled = pkOn && D.passkey.enrolled;
-    if (!pkOn) { authMsg = "Authorizing…"; setStage("auth"); setTimeout(() => post({ type: "wallet.confirm", assertion: null }), 1500); return; }
-    if (!enrolled) { setStage("enroll"); return; }
+    if (!pkOn) { simulatedApprove(false); return; }
+    // Don't re-show the enrolment interstitial if the user already opted out this session.
+    if (!enrolled) { if (D.skipPasskeyEnroll) simulatedApprove(true); else setStage("enroll"); return; }
     runAuthCeremony();
   }
 
@@ -211,7 +245,7 @@
         const response = await window.Passkey.register(msg.options); // WebAuthn create() on wallet origin
         authMsg = "Finishing setup…"; render();
         post({ type: "wallet.enrolled", response, challenge: msg.options.challenge });
-      } catch (err) { errMsg = err.message || "Enrollment failed."; setStage("error"); }
+      } catch (err) { errMsg = friendlyError(err); setStage("error"); }
     }
     else if (msg.type === "wallet.success") { setStage("success"); }
     else if (msg.type === "wallet.error") { errMsg = msg.message || "Something went wrong."; switching = false; setStage("error"); }

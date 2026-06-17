@@ -101,7 +101,7 @@
         <mxCell id="c_policy" value="Spend Policy + Consent&#10;autonomy · per-tx cap&#10;budget · allowlist · rail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
           <mxGeometry x="385" y="115" width="170" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="c_sign" value="sign_mandate (Intent / Cart / Payment) · SD-JWT+kb Checkout Mandate (issuer-signed, key-bound)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2E0;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
+        <mxCell id="c_sign" value="sign_mandate (Checkout / Payment, open or closed) · SD-JWT+kb (issuer-signed, key-bound)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2E0;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
           <mxGeometry x="20" y="190" width="535" height="40" as="geometry" />
         </mxCell>
         <mxCell id="c_key" value="User Device Key (mandate signing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=10;" vertex="1" parent="creds">
@@ -126,7 +126,7 @@
         <mxCell id="p_auth" value="authorize_payment · capture_payment · refund_payment&#10;multi-rail: Google Pay · RTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE8E7;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
           <mxGeometry x="20" y="115" width="270" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="p_verify" value="Mandate Verification&#10;intent_mandate re-check&#10;(defense in depth)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
+        <mxCell id="p_verify" value="Mandate Verification&#10;payment mandate re-check&#10;(defense in depth)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">
           <mxGeometry x="305" y="115" width="230" height="55" as="geometry" />
         </mxCell>
         <mxCell id="p_kya" value="KYA Agent Registry + Reputation&#10;lookup_agent · status · score" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=10;" vertex="1" parent="psp">

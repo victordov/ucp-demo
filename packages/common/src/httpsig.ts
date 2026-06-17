@@ -180,6 +180,8 @@ export async function verifyRequest(req: RequestLike, fetchProfile: ProfileFetch
     }
     const jwk = (profile.signing_keys || []).find((k) => k.kid === keyid);
     if (!jwk) return { ok: false, error: "key_not_found", profileUrl, keyId: keyid };
+    // Only ES256 (ECDSA P-256) is supported; reject any other declared algorithm.
+    if (jwk.alg && jwk.alg !== "ES256") return { ok: false, error: "algorithm_unsupported", profileUrl, keyId: keyid };
 
     // 5. Rebuild signature base and verify
     const base = buildSignatureBase(

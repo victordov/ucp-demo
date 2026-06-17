@@ -17,6 +17,10 @@ import {
   createSession,
   getSession,
   runIntent,
+  setModality,
+  runAutonomous,
+  prepareAutonomy,
+  authorizeAndRun,
   select,
   addAccessory,
   createCheckout,
@@ -24,6 +28,7 @@ import {
   checkoutView,
   preparePayment,
   confirmAndPay,
+  resolveThreeDs,
   track,
   onWebhook,
   DEFAULT_ADDRESS,
@@ -270,7 +275,28 @@ function handle(fn: (req: express.Request) => Promise<unknown>) {
   };
 }
 
-api.post("/intent", handle(async (req) => runIntent(getSession(req.body.session_id), String(req.body.text ?? ""))));
+api.post("/intent", handle(async (req) => runIntent(getSession(req.body.session_id), String(req.body.text ?? ""), { humanPresent: req.body.human_present })));
+// Toggle the session modality (human-present ↔ human-not-present). For autonomous
+// purchases call this (or pass human_present:false to /intent) BEFORE shopping so
+// the user-signed open mandates are minted up front.
+api.post("/mode", handle(async (req) => setModality(getSession(req.body.session_id), req.body.human_present !== false)));
+// End-to-end human-not-present purchase (deterministic, no LLM): the user
+// authorizes once, then the agent completes the whole task autonomously.
+api.post("/autonomous", handle(async (req) => {
+  const s = getSession(req.body.session_id);
+  const r = await runAutonomous(s, String(req.body.text ?? ""));
+  return { ...r, snapshot: snapshot(s) };
+}));
+// Interactive human-not-present, step 1: parse the request + return the
+// merchants and payment methods the user must choose to authorize autonomy.
+api.post("/autonomy/prepare", handle(async (req) => prepareAutonomy(getSession(req.body.session_id), String(req.body.text ?? ""))));
+// Interactive human-not-present, step 2: authorize with the chosen merchant
+// allowlist + payment method, then run the purchase autonomously.
+api.post("/autonomy/authorize", handle(async (req) => {
+  const s = getSession(req.body.session_id);
+  const r = await authorizeAndRun(s, { merchantIds: req.body.merchant_ids, methodId: req.body.method_id });
+  return { ...r, snapshot: snapshot(s) };
+}));
 api.post("/select", handle(async (req) => select(getSession(req.body.session_id), req.body.product_id, req.body.merchant_id)));
 api.post("/accessory", handle(async (req) => addAccessory(getSession(req.body.session_id))));
 api.post("/checkout", handle(async (req) => createCheckout(getSession(req.body.session_id))));
@@ -280,13 +306,17 @@ api.post("/shipping", handle(async (req) => selectShipping(getSession(req.body.s
 api.post("/promo", handle(async (req) => applyPromo(getSession(req.body.session_id), String(req.body.code ?? ""))));
 api.post("/payment-methods", handle(async (req) => ({ payment_methods: await listPaymentMethods(getSession(req.body.session_id)) })));
 api.post("/checkout/view", handle(async (req) => checkoutView(getSession(req.body.session_id))));
-api.post("/pay", handle(async (req) => preparePayment(getSession(req.body.session_id), req.body.method_id)));
-api.post("/pay/confirm", handle(async (req) => confirmAndPay(getSession(req.body.session_id), { humanPresent: req.body.human_present, webauthn: req.body.webauthn })));
+api.post("/pay", handle(async (req) => preparePayment(getSession(req.body.session_id), req.body.method_id, req.body.wallet_host)));
+api.post("/pay/confirm", handle(async (req) => confirmAndPay(getSession(req.body.session_id), { humanPresent: req.body.human_present, webauthn: req.body.webauthn, interactive3ds: true })));
+// Resume an interactive 3-D Secure step-up after the user approves/cancels the bank page.
+api.post("/pay/3ds", handle(async (req) => resolveThreeDs(getSession(req.body.session_id), { outcome: req.body.outcome })));
 
-// Passkeys (WebAuthn / SPC) — enrollment + status, relayed to the CP.
-api.post("/passkey/status", handle(async (req) => passkeyStatus(getSession(req.body.session_id))));
-api.post("/passkey/register-options", handle(async (req) => passkeyRegisterOptions(getSession(req.body.session_id))));
-api.post("/passkey/register", handle(async (req) => passkeyRegister(getSession(req.body.session_id), req.body.response, req.body.challenge)));
+// Passkeys (WebAuthn / SPC) — enrollment + status, relayed to the CP. wallet_host
+// is the host the browser loaded the sheet from (the passkey RP ID); it scopes
+// status/options so localhost and a tunnel host each resolve correctly.
+api.post("/passkey/status", handle(async (req) => passkeyStatus(getSession(req.body.session_id), req.body.wallet_host)));
+api.post("/passkey/register-options", handle(async (req) => passkeyRegisterOptions(getSession(req.body.session_id), req.body.wallet_host)));
+api.post("/passkey/register", handle(async (req) => passkeyRegister(getSession(req.body.session_id), req.body.response, req.body.challenge, req.body.wallet_host)));
 // Relay so the UI can remove the enrolled passkey (e.g. to unblock automated demos).
 api.post("/passkey/remove", handle(async () => {
   const r = await fetch(`${URLS.credentialsProvider}/api/wallet/passkey/remove`, { method: "POST" });
@@ -317,10 +347,12 @@ api.post("/orders", handle(async (req) => listOrders(getSession(req.body.session
 api.get("/scenarios", (_req, res) => res.json({ scenarios: SCENARIOS, llm_agent: llmAgentEnabled() }));
 api.post("/scenario", handle(async (req) => runScenario(getSession(req.body.session_id), String(req.body.id))));
 
-// Full LLM agentic loop (#17): the LLM drives the tool calls end to end.
+// Full LLM agentic loop (#17): the LLM drives the tool calls end to end. When
+// human_present:false (or the goal implies autonomy) it runs the human-not-present
+// flow — the LLM signs the closed mandates under user-signed open mandates.
 api.post("/agent", handle(async (req) => {
   const s = getSession(req.body.session_id);
-  const r = await runAgentLoop(s, String(req.body.goal ?? ""));
+  const r = await runAgentLoop(s, String(req.body.goal ?? ""), { humanPresent: req.body.human_present });
   return { ...r, snapshot: snapshot(s) };
 }));
 

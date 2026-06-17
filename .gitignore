@@ -23,3 +23,5 @@ dist/
 # python bytecode (conformance suite)
 __pycache__/
 *.pyc
+PROPOSITION.html
+

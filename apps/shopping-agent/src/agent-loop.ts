@@ -6,7 +6,7 @@
  * call visible in the trace. Falls back to the deterministic flow on any error.
  */
 import type { Session } from "./orchestrator.ts";
-import { runIntent, select, addItem, createCheckout, selectShipping, applyPromo, preparePayment, confirmAndPay } from "./orchestrator.ts";
+import { runIntent, select, addItem, createCheckout, selectShipping, applyPromo, preparePayment, confirmAndPay, setModality, totalOf, spendCapCents } from "./orchestrator.ts";
 
 interface ToolSpec {
   name: string;
@@ -55,7 +55,9 @@ const TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: {} },
     run: async (s) => {
       await preparePayment(s);
-      return confirmAndPay(s);
+      // Honor the session modality: human-not-present ⇒ the agent signs the
+      // closed mandates under the user's open mandates (no user at pay time).
+      return confirmAndPay(s, { humanPresent: s.humanPresent !== false });
     },
   },
 ];
@@ -91,10 +93,34 @@ const CHAT_TOOLS: ToolSpec[] = [
     parameters: { type: "object", properties: { code: { type: "string" } }, required: ["code"] },
     run: async (s, a) => applyPromo(s, a.code),
   },
+  {
+    name: "buy_autonomously",
+    description:
+      "Complete the purchase AUTONOMOUSLY (human-not-present) — the agent pays on the user's behalf instead of the user paying from the checkout card. Call this ONLY when the user explicitly authorizes an autonomous purchase (e.g. 'just buy it', 'purchase it for me', 'you decide and pay', 'don't ask, buy the best one'). Optionally pass max_price (in dollars) to cap autonomous spend (e.g. 'buy it if it's under $250') — the user's Open Payment Mandate refuses anything above it. Opens the checkout if needed, then signs the closed mandates under the user's signed open mandates.",
+    parameters: { type: "object", properties: { max_price: { type: "number", description: "Optional cap in dollars; the agent will not pay above this." } } },
+    run: async (s, a) => {
+      setModality(s, false);
+      if (a?.max_price != null) {
+        s.constraints = { required_features: [], query: "", engine: "deterministic", ...(s.constraints ?? {}), buy_below: a.max_price };
+      }
+      if (!s.checkout) await createCheckout(s);
+      // Respect the user's stated cap BEFORE paying — never overspend. The PSP
+      // also enforces it (open Payment Mandate amount_range), but holding here
+      // gives a clean answer instead of a payment rejection.
+      const cap = spendCapCents(s.constraints);
+      const total = totalOf(s.checkout!);
+      if (cap != null && total > cap) {
+        return { autonomous: true, order: null, watching: true, current_total: total / 100, cap: cap / 100, note: `held — $${(total / 100).toFixed(2)} is above your $${(cap / 100).toFixed(2)} cap; did not buy` };
+      }
+      await preparePayment(s);
+      return confirmAndPay(s, { humanPresent: false });
+    },
+  },
 ];
 
 const SYSTEM =
-  "You are Shoppy, an autonomous shopping agent using the Universal Commerce Protocol. " +
+  "You are Shoppy, an autonomous shopping agent using the Universal Commerce Protocol (UCP) and Agent Payments Protocol (AP2). " +
+  "You operate human-not-present: the user has left, having signed open mandates that authorise you to act within constraints. " +
   "Fulfil the user's request by calling tools: search first, pick the best offer that meets their constraints, " +
   "open checkout, optionally set shipping or apply a discount they mention, then pay. " +
   "Prefer the recommended product and the lowest-price merchant unless the user says otherwise. Be decisive.";
@@ -107,9 +133,10 @@ const CHAT_SYSTEM =
   "1. When the user describes what they want, call search_products, then PRESENT the options conversationally (name, merchant, price) and ask which they'd like.\n" +
   "2. When they pick an item, call add_to_cart. They may add several items (call add_to_cart again each time) — all from the same merchant. Ask if they want anything else.\n" +
   "3. When the user is ready, call open_checkout. Then tell them their cart and total are shown in the checkout card below, and to review it and click 'Pay with Google Pay' to complete the purchase.\n" +
-  "4. You do NOT have a pay tool and you MUST NOT try to pay. Payment is done by the user from the checkout card. If they say 'pay', tell them to click the 'Pay with Google Pay' button in the checkout card.\n" +
-  "5. If they ask for express shipping or give a discount code, call set_shipping / apply_discount (then re-run open_checkout if needed).\n" +
-  "6. Keep replies short and friendly. Amounts you receive are already in dollars. You may call multiple tools in one turn, but stop and return text whenever you need the user's input.";
+  "4. By default you do NOT pay — the user pays from the checkout card. If they say 'pay', tell them to click the 'Pay with Google Pay' button in the checkout card.\n" +
+  "5. EXCEPTION — autonomous purchase (human-not-present): if the user EXPLICITLY authorizes you to buy on their behalf without paying themselves (e.g. 'just buy it', 'purchase it for me', 'you decide and pay', 'buy it if it's under $250'), call buy_autonomously. If they give a price limit, pass it as max_price (dollars) — their Open Payment Mandate refuses anything above it. This runs the human-not-present flow: you sign the closed mandates under the user's signed open mandates. Only do this on an explicit instruction — when in doubt, ask.\n" +
+  "6. If they ask for express shipping or give a discount code, call set_shipping / apply_discount (then re-run open_checkout if needed).\n" +
+  "7. Keep replies short and friendly. Amounts you receive are already in dollars. You may call multiple tools in one turn, but stop and return text whenever you need the user's input.";
 
 export function llmAgentEnabled() {
   return !!(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY);
@@ -198,8 +225,19 @@ async function anthropicChat(s: Session, userText: string, maxSteps: number) {
   return { reply: "(I took several steps — let me know how you'd like to proceed.)", steps, engine: "anthropic" };
 }
 
-/** Run the LLM tool-calling loop. Returns a transcript of tool calls + final text. */
-export async function runAgentLoop(s: Session, goal: string, maxSteps = 8): Promise<{ steps: any[]; final: string; engine: string }> {
+/**
+ * Run the LLM tool-calling loop. The full agent loop is human-not-present
+ * (autonomous) by default — the user set a goal and left — so it mints the
+ * user-signed open mandates and signs the closed mandates itself. Pass
+ * humanPresent:true to drive a user-present run instead.
+ */
+export async function runAgentLoop(
+  s: Session,
+  goal: string,
+  opts: { humanPresent?: boolean } = {},
+  maxSteps = 8
+): Promise<{ steps: any[]; final: string; engine: string }> {
+  setModality(s, opts.humanPresent === true);
   if (process.env.OPENAI_API_KEY) return openaiLoop(s, goal, maxSteps);
   if (process.env.ANTHROPIC_API_KEY) return anthropicLoop(s, goal, maxSteps);
   throw new Error("no LLM key configured");
@@ -226,7 +264,7 @@ async function openaiLoop(s: Session, goal: string, maxSteps: number) {
     messages.push(msg);
     if (!msg.tool_calls?.length) return { steps, final: msg.content ?? "Done.", engine: "openai" };
     for (const tc of msg.tool_calls) {
-      const tool = CHAT_TOOLS.find((t) => t.name === tc.function.name);
+      const tool = TOOLS.find((t) => t.name === tc.function.name);
       let result: unknown;
       try {
         result = tool ? await tool.run(s, JSON.parse(tc.function.arguments || "{}")) : { error: "unknown tool" };
@@ -262,7 +300,7 @@ async function anthropicLoop(s: Session, goal: string, maxSteps: number) {
     }
     const toolResults: any[] = [];
     for (const tu of toolUses) {
-      const tool = CHAT_TOOLS.find((t) => t.name === tu.name);
+      const tool = TOOLS.find((t) => t.name === tu.name);
       let result: unknown;
       try {
         result = tool ? await tool.run(s, tu.input ?? {}) : { error: "unknown tool" };

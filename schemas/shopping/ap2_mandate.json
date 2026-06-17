@@ -12,10 +12,16 @@
       "pattern": "^[A-Za-z0-9_-]+\\.\\.[A-Za-z0-9_-]+$"
     },
     "checkout_mandate": {
-      "title": "Checkout Mandate",
-      "description": "SD-JWT+kb credential in `ap2.checkout_mandate`. Proving user authorization for the checkout. Contains the full checkout including `ap2.merchant_authorization`.",
+      "title": "Checkout Mandate (closed)",
+      "description": "Closed Checkout Mandate (vct=mandate.checkout.1) as an SD-JWT+kb credential in `ap2.checkout_mandate`. Human-present: issued by the Credentials Provider and key-bound to the user device key. Human-not-present: issued and held by the agent key (authorized by the open mandate's cnf). Contains the full checkout including `ap2.merchant_authorization`.",
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]+(~[A-Za-z0-9_-]+)*$"
+    },
+    "open_checkout_mandate": {
+      "title": "Open Checkout Mandate",
+      "description": "User-signed Open Checkout Mandate (vct=mandate.checkout.open.1) as a compact JWS in `ap2.open_checkout_mandate`. Present only in the human-not-present flow; carries `constraints[]` (checkout.allowed_merchants, checkout.line_items) and a `cnf` sender-constraining the closed mandate to the agent key.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
     },
     "ap2_with_merchant_authorization": {
       "type": "object",
@@ -30,15 +36,24 @@
     },
     "ap2_with_checkout_mandate": {
       "type": "object",
-      "description": "AP2 extension data including checkout mandate.",
+      "description": "AP2 extension data including the closed checkout mandate and (for human-not-present) the user-signed open checkout mandate.",
       "properties": {
         "checkout_mandate": {
           "$ref": "#/$defs/checkout_mandate",
-          "description": "SD-JWT+kb proving user authorized this checkout.",
+          "description": "Closed Checkout Mandate proving authorization of this checkout.",
           "ucp_request": {
             "create": "omit",
             "update": "omit",
             "complete": "required"
+          }
+        },
+        "open_checkout_mandate": {
+          "$ref": "#/$defs/open_checkout_mandate",
+          "description": "Human-not-present only: the user-signed open mandate the closed mandate satisfies. Optional (absent in the human-present/direct flow).",
+          "ucp_request": {
+            "create": "omit",
+            "update": "omit",
+            "complete": "optional"
           }
         }
       }

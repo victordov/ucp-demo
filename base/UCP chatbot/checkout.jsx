@@ -99,7 +99,7 @@ function CheckoutCard(props) {
         <button className="pay-btn" onClick={onPay} disabled={paying || editingAddr}>
           {paying ? <><Icon name="refresh" size={18} className="spin" /> Opening…</> : <>Pay with <GPayMark size={17} /></>}
         </button>
-        <div className="co-mandate-hint"><Icon name="seal" size={12} /> Cart Mandate sealed · within your $300 intent</div>
+        <div className="co-mandate-hint"><Icon name="seal" size={12} /> Merchant-signed checkout verified · you'll sign the Checkout Mandate · within your $300 limit</div>
       </div>
     </div>
   );

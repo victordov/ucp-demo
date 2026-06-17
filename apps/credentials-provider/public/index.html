@@ -110,7 +110,7 @@ details pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;pa
     <div class="card">
       <h2 style="display:flex;align-items:center;gap:10px">Signed mandates (user device key)
         <select id="m-filter" class="pin" style="width:auto;font-size:11.5px;padding:4px 8px" onchange="sigs['mandates']=null;load()">
-          <option value="">all kinds</option><option>IntentMandate</option><option>CartMandate</option><option>PaymentMandate</option><option>CheckoutMandate</option>
+          <option value="">all kinds</option><option>CheckoutMandate</option><option>PaymentMandate</option><option>OpenCheckoutMandate</option><option>OpenPaymentMandate</option>
         </select>
       </h2>
       <table id="mandates"><tr><th>Kind</th><th>ID</th><th>Approved via</th><th>Signed</th><th>JWS</th></tr></table>

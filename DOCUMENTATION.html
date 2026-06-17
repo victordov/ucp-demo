@@ -138,9 +138,51 @@ svg text{font-family:var(--sans)} svg .m{font-family:var(--mono)}
 /* mermaid sequence diagrams */
 pre.mermaid{background:transparent;border:none;padding:6px 0 0;margin:0;text-align:center;overflow-x:auto;font-family:inherit;line-height:1.2}
 pre.mermaid svg{max-width:100%;height:auto}
+/* very wide sequence diagrams: let them scroll at readable size instead of shrinking to nothing */
+pre.mermaid.wide{text-align:left}
+pre.mermaid.wide svg{max-width:none}
+
+/* ---------- polish: accessibility, focus, motion ---------- */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.skip-link{position:absolute;left:-9999px;top:10px;z-index:200;background:var(--accent);color:#fff;padding:9px 16px;border-radius:9px;font-weight:700;font-size:13px;box-shadow:var(--shadow)}
+.skip-link:focus{left:10px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  html{scroll-behavior:auto}
+}
+/* ---------- polish: heading anchors ---------- */
+h2 .anchor,h3 .anchor{opacity:0;margin-left:9px;font-size:.66em;color:var(--muted);text-decoration:none;font-weight:600;transition:opacity .15s;vertical-align:2px}
+h2:hover .anchor,h3:hover .anchor,.anchor:focus{opacity:.85}
+/* ---------- polish: tables ---------- */
+table tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+thead th,table tr:first-child th{border-bottom:2px solid var(--line)}
+/* ---------- polish: cards, codeblocks, callouts ---------- */
+.card{transition:border-color .15s, box-shadow .15s}
+.codeblock{border:1px solid var(--line);box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+html[data-theme=dark] .codeblock{border-color:#1c2230}
+.copy{transition:background .15s,color .15s}
+html[data-theme=dark] code{background:#1e2240;color:#c7ccff}
+/* slightly stronger hero depth + subtle dotted texture */
+.hero{box-shadow:0 20px 50px -24px rgba(79,70,229,.5)}
+.hero::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.10) 1px,transparent 1px);background-size:24px 24px;opacity:.55;pointer-events:none}
+.hero h1,.hero p,.hero .pills{position:relative;z-index:1}
+/* ---------- polish: back-to-top ---------- */
+#toTop{position:fixed;right:22px;bottom:22px;z-index:80;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;font-size:19px;line-height:1;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .2s,transform .2s,background .15s,color .15s}
+#toTop.show{opacity:1;transform:none;pointer-events:auto}
+#toTop:hover{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+/* ---------- polish: print ---------- */
+@media print{
+  .sidebar,.theme-btn,#toTop,.copy,.av-bar .av-ctrls,#av-flowctrls,#av-underbar{display:none!important}
+  .layout{grid-template-columns:1fr;max-width:none}
+  main{padding:0}
+  .card,.codeblock,table,.actor-detail{break-inside:avoid}
+  .hero{color:#111;background:none!important;border:1px solid #ccc}
+  a{color:inherit}
+}
 </style>
 </head>
 <body>
+<a href="#content" class="skip-link">Skip to content</a>
 <div class="layout">
 
 <!-- ======================= SIDEBAR ======================= -->
@@ -175,7 +217,7 @@ pre.mermaid svg{max-width:100%;height:auto}
 </aside>
 
 <!-- ======================= MAIN ======================= -->
-<main>
+<main id="content" tabindex="-1">
 
 <div class="hero">
   <h1>Agentic Commerce, end to end</h1>
@@ -268,7 +310,7 @@ pre.mermaid svg{max-width:100%;height:auto}
         authorized purchase — and proves every step. It is the only component the user talks to, and the only one that
         orchestrates; it holds no card data and can spend nothing without the wallet's signed mandates.`,
       arch: [
-        "<b>orchestrator.ts</b> — the protocol state machine per session: discovery → capability negotiation (intersection) → IntentMandate → federated search → checkout → CartMandate → rail selection → mint → Payment + Checkout mandates → complete → post-purchase. Also: 24 scenario flows, the audit hash-chain, evidence bundles, the OTLP exporter hook.",
+        "<b>orchestrator.ts</b> — the protocol state machine per session: discovery → capability negotiation (intersection) → constraints → federated search → checkout (merchant_authorization) → rail selection → mint → Checkout + Payment Mandates → complete → post-purchase. Also: 24 scenario flows, the audit hash-chain, evidence bundles, the OTLP exporter hook.",
         "<b>agent-loop.ts</b> — two LLM modes: an autonomous tool-calling loop (search→select→checkout→pay) and the interactive chat (cart-building tools, deliberately <i>no pay tool</i> — the human pays via the sheet).",
         "<b>nlu.ts</b> — intent parsing: deterministic regex with optional LLM upgrade (OpenAI/Anthropic), graceful fallback.",
         "<b>server.ts</b> — platform profile, the signed-webhook receiver, and the local REST+SSE API that drives the React UI.",
@@ -293,7 +335,7 @@ pre.mermaid svg{max-width:100%;height:auto}
         "<b>Tenant state</b> — per merchant: ES256 key, catalog (editable from the dashboard), carts, checkouts, orders, decline stats.",
         "<b>Tool registry</b> — 16 tools across catalog / cart / checkout / order / post-order (see the per-tool reference below).",
         "<b>Checkout engine</b> — totals rules (one subtotal, one total, negative discounts), shipping options, promo codes; the checkout is <b>re-signed on every mutation</b> (detached JWS over JCS(checkout − ap2)).",
-        "<b>Verification gauntlet</b> — at complete: KYA lookup → SD-JWT+kb verify → nested-binding self-check → terms match → intent ceiling → handler validation → PSP authorize/capture → Order + evidence.",
+        "<b>Verification gauntlet</b> — at complete: KYA lookup → SD-JWT+kb verify → nested-binding self-check → terms match → handler validation → PSP authorize/capture → Order + evidence.",
         "<b>OAuth 2.0 AS per tenant</b> — RFC 8414 discovery, PKCE, scoped tokens (<code>order:read</code>) for identity linking.",
         "<b>Webhook pusher</b> — signed order.shipped / delivered / refunded to the platform's declared webhook_url.",
       ],
@@ -314,7 +356,7 @@ pre.mermaid svg{max-width:100%;height:auto}
       arch: [
         "<b>Wallet vault</b> — payment methods with <code>pan_ref</code> secrets that are released only to the PSP after mandate verification; deterministic demo behaviors (3-DS card, declining card) + an RTP checking account (multi-rail).",
         "<b>Policy engine</b> — checkPolicy(): per-tx cap, budget (+ live spent meter), merchant allowlist, validity window, autonomy with the approval-inbox waiver. Enforced at <b>mint</b> (gate 1) and <b>sign</b> (gate 2); the snapshot travels in the token for the PSP's gate 3.",
-        "<b>Mandate signer</b> — Intent/Cart/Payment as compact JWS by the device key; the Checkout Mandate as a real <b>SD-JWT+kb</b> (CP-issued, key-bound, aud = merchant, nonce = checkout, selective disclosure).",
+        "<b>Mandate signer</b> — the Payment Mandate and Checkout Mandate as real <b>SD-JWT+kb</b> credentials (CP-issued, key-bound to the device key, aud = merchant, nonce = checkout, selective disclosure); for autonomous sessions, user-signed open mandates carrying constraints (cnf = agent key).",
         "<b>Passkey subsystem</b> — WebAuthn/SPC (simplewebauthn): enrollment, and signing gated on an assertion whose challenge = SHA-256(JCS(checkout − ap2)) with UV=1 — real Touch ID over the exact terms.",
         "<b>Token store</b> — single-use (≤2 releases for the 3-DS retry), user-revocable; budget accounted on first release.",
         "<b>Consent records</b> — approval inbox, policy-change audit log, signed-mandate log with decoded-JWS viewer.",
@@ -334,7 +376,7 @@ pre.mermaid svg{max-width:100%;height:auto}
         merchant already did, because in AP2 every money-moving hop must be independently convinced. It also plays the
         payment network's emerging role: Know-Your-Agent registry, reputation, velocity — the machine-native fraud stack.`,
       arch: [
-        "<b>Authorize pipeline (8 steps)</b> — mandate signature (CP JWKs) → KYA gate → velocity check → scope (expiry, amount, payee, checkout, cart link) → intent-mandate re-validation → release_credentials → token-bound policy re-check (gate 3) → issuer simulation (ok / 3-DS / decline).",
+        "<b>Authorize pipeline (8 steps)</b> — mandate signature (CP JWKs) → KYA gate → velocity check → scope (expiry, amount, payee, checkout binding) → release_credentials → token-bound policy re-check (gate 3) → issuer simulation (ok / 3-DS / decline).",
         "<b>Multi-rail</b> — card-network tokens vs RTP instant settlement; the rail is recorded per transaction and charted.",
         "<b>KYA registry</b> — agent records: level, status (suspendable), behavior-driven reputation (+1 capture, −8 decline, −10 velocity); served to merchants via <code>lookup_agent</code>.",
         "<b>Velocity limiter</b> — rolling 60s window per agent (<code>PSP_VELOCITY_LIMIT</code>, default 60) → 429 <code>velocity_exceeded</code>.",
@@ -385,7 +427,1065 @@ pre.mermaid svg{max-width:100%;height:auto}
   transport, with which compliance badge</b>. Solid arrows are JSON-RPC 2.0 <code>tools/call</code> over HTTP (the UCP
   <b>MCP binding</b>) — every one of them RFC 9421-signed. Dashed teal is the signed order webhook (plain REST POST).
   Gray edges are ordinary REST: profile discovery, OAuth 2.0 identity linking, the user's consent surface and the
-  3-DS step-up page.</p>
+  3-DS step-up page. Explore it live below: <b>click any service or signal</b> to inspect its endpoints, payloads,
+  keys and security, <b>hover</b> for a quick read, scroll to zoom and drag to pan, or hit
+  <b>▶ Play purchase flow</b> to watch a real checkout travel the wire step by step. The same topology is mirrored
+  in the static 2-D schematic and the Mermaid auto-layout in the collapsible below.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">The AP2 role-based ecosystem (overview §3)</h3>
+    <p style="font-size:13.5px;color:var(--muted);margin:0 0 8px">AP2 defines six roles with a strict separation of
+    concerns. This demo realizes them across four services — the <b>Trusted Surface</b> and the <b>Network &amp; Issuer</b>
+    are <i>combined</i> into other components, which AP2 explicitly permits (non-normative role combinations).</p>
+    <table>
+      <tr><th style="width:230px">AP2 role (§3)</th><th>Played here by</th><th>Responsibility</th></tr>
+      <tr><td><b>Shopping Agent (SA)</b></td><td>🤖 Shopping Agent · “Shoppy” (:4100)</td><td>Product discovery, builds the Checkout, executes the purchase.</td></tr>
+      <tr><td><b>Merchant (M)</b></td><td>🏪 Merchant Portal · 4 tenants (:4101)</td><td>Owns the catalog, creates and <b>signs the Checkout</b> (<code>merchant_authorization</code>), fulfills orders.</td></tr>
+      <tr><td><b>Credential Provider (CP)</b></td><td>👛 Credentials Provider · “Walletly” (:4102)</td><td>Source of payment credentials; verifies the agent is authorized to use a credential and scopes it (single-use token).</td></tr>
+      <tr><td><b>Merchant Payment Processor (MPP)</b></td><td>🏦 Payment Provider · “PayStream” (:4103)</td><td>Processes the payment; verifies the credential was authorized to pay for <i>this</i> Checkout.</td></tr>
+      <tr><td><b>Trusted Surface (TS)</b> <span class="tag" style="font-size:9.5px">combined</span></td><td>Hosted by the CP (biometric / Touch ID consent) &amp; the PSP (3-DS step-up page)</td><td>Gets informed user consent for the intent <b>before</b> a user-signed Mandate is created. AP2 allows the CP/agent to host it — here the CP does (Trusted Platform Provider model).</td></tr>
+      <tr><td><b>Network &amp; Issuer</b> <span class="tag" style="font-size:9.5px">simulated</span></td><td>Stood in for by the PSP + the chosen test card</td><td>Payment network + issuer of the user's credential; authorizes transactions and issues agent-transaction tokens. Simulated deterministically in this demo.</td></tr>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">Per AP2's non-normative examples, roles may be combined —
+    e.g. an SA may provide its own CP, a Merchant may be its own MPP, and the CP may host the Trusted Surface. This demo
+    keeps SA / Merchant / CP / MPP as separate processes (the hardest, most honest case) and folds TS + Network/Issuer in.</p>
+  </div>
+
+<style>
+/* ===================== INTERACTIVE 2D TOPOLOGY (theme-aware) ===================== */
+#archviz{
+  --av-panel:#ffffff; --av-ink:#16181d; --av-mut:#5b647a; --av-line:#e3e7f0;
+  --av-bg1:#eef2fb; --av-bg2:#e3e9f7; --av-glow1:rgba(99,102,241,.12); --av-glow2:rgba(13,148,136,.10);
+  --av-chip:rgba(30,45,90,.04); --av-chipbd:rgba(40,60,120,.16); --av-chipink:#2b3550;
+  --av-rowbg:rgba(30,45,90,.03); --av-rowbd:rgba(40,60,120,.14);
+  --av-wire:#0f172a; --av-wireink:#cbd5e1;
+  position:relative;margin:14px 0 18px;border-radius:18px;overflow:hidden;color:var(--av-ink);
+  background:radial-gradient(1200px 520px at 24% -12%,var(--av-glow1),transparent 60%),
+             radial-gradient(900px 520px at 102% 118%,var(--av-glow2),transparent 55%),
+             linear-gradient(180deg,var(--av-bg1) 0%,var(--av-bg2) 100%);
+  border:1px solid var(--av-line);box-shadow:0 20px 50px -26px rgba(20,30,80,.30)}
+html[data-theme=dark] #archviz{
+  --av-panel:#0e1322; --av-ink:#e7ecf7; --av-mut:#93a0bd; --av-line:rgba(150,170,230,.16);
+  --av-bg1:#0a0e1c; --av-bg2:#070a14; --av-glow1:rgba(99,102,241,.20); --av-glow2:rgba(13,148,136,.16);
+  --av-chip:rgba(255,255,255,.05); --av-chipbd:rgba(150,170,230,.22); --av-chipink:#dfe7ff;
+  --av-rowbg:rgba(255,255,255,.025); --av-rowbd:rgba(150,170,230,.14);
+  --av-wire:#070b16; --av-wireink:#cbd5e1;
+  box-shadow:0 24px 60px -28px rgba(0,0,40,.65)}
+#archviz *{box-sizing:border-box}
+#archviz .av-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px 20px;border-bottom:1px solid var(--av-line)}
+#archviz .av-bar h4{margin:0;font-size:15.5px;font-weight:800;letter-spacing:-.01em;color:var(--av-ink);display:flex;align-items:center;gap:9px}
+#archviz .av-bar h4 .dotpulse{width:9px;height:9px;border-radius:50%;background:#10b981;box-shadow:0 0 10px #10b981;animation:avpulse 1.8s infinite}
+@keyframes avpulse{0%,100%{opacity:.35}50%{opacity:1}}
+#archviz .av-bar .sub{font-size:11.5px;color:var(--av-mut);margin-left:2px}
+#archviz .av-ctrls{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+#archviz .av-btn{font-family:var(--sans);font-size:11.5px;font-weight:600;color:var(--av-ink);background:var(--av-chip);
+  border:1px solid var(--av-chipbd);border-radius:9px;padding:6px 12px;cursor:pointer;transition:.15s;white-space:nowrap}
+#archviz .av-btn:hover{background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.5)}
+#archviz .av-btn.on{background:linear-gradient(135deg,rgba(99,102,241,.92),rgba(124,58,237,.92));color:#fff;border-color:transparent}
+html[data-theme=dark] #archviz .av-btn.on{background:linear-gradient(135deg,rgba(99,102,241,.55),rgba(124,58,237,.5));color:#fff;border-color:rgba(150,160,255,.6)}
+#archviz .av-sep{width:1px;align-self:stretch;background:var(--av-line);margin:2px 3px}
+
+#archviz .av-main{display:grid;grid-template-columns:1fr 348px;gap:0}
+@media(max-width:1000px){#archviz .av-main{grid-template-columns:1fr}}
+#archviz .av-left{min-width:0;border-right:1px solid var(--av-line)}
+@media(max-width:1000px){#archviz .av-left{border-right:none;border-bottom:1px solid var(--av-line)}}
+#archviz #av-stage{position:relative;height:600px;cursor:grab;overflow:hidden}
+@media(max-width:560px){#archviz #av-stage{height:460px}}
+#archviz #av-stage:active{cursor:grabbing}
+#archviz #av-stage canvas{display:block;width:100%;height:100%}
+#archviz .av-fallback{display:flex;align-items:center;justify-content:center;height:100%;padding:40px;
+  text-align:center;color:var(--av-mut);font-size:14px;line-height:1.6}
+#archviz #av-tip{position:absolute;display:none;z-index:6;max-width:248px;pointer-events:none;
+  background:var(--av-panel);border:1px solid var(--c,var(--av-chipbd));border-radius:10px;
+  padding:8px 11px;font-size:11.5px;line-height:1.45;color:var(--av-ink);box-shadow:0 10px 26px rgba(10,15,40,.35)}
+#archviz #av-tip b{font-size:12.5px}#archviz #av-tip span{color:var(--av-mut)}
+#archviz .av-hint{position:absolute;left:14px;bottom:12px;z-index:5;font-size:11px;color:var(--av-mut);
+  background:var(--av-panel);border:1px solid var(--av-line);border-radius:8px;padding:5px 10px;pointer-events:none;opacity:.9}
+#archviz .av-watermark{position:absolute;right:14px;top:12px;z-index:5;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--av-mut);pointer-events:none;opacity:.7}
+
+/* flow caption + controls overlay */
+#archviz #av-caption{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:7;display:none;
+  max-width:80%;background:var(--av-panel);border:1px solid var(--c,rgba(99,102,241,.5));border-left:4px solid var(--c,#818cf8);
+  border-radius:10px;padding:9px 14px;box-shadow:0 12px 30px rgba(10,15,40,.4);text-align:left}
+#archviz #av-caption .step{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--c,#818cf8);font-weight:800;margin-bottom:2px}
+#archviz #av-caption .txt{font-size:12.5px;line-height:1.5;color:var(--av-ink)}
+#archviz #av-flowctrls{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;display:none;
+  align-items:center;gap:8px;background:var(--av-panel);border:1px solid var(--av-line);border-radius:12px;padding:7px 9px;box-shadow:0 12px 30px rgba(10,15,40,.4)}
+#archviz .av-fbtn{font-family:var(--sans);font-size:11.5px;font-weight:700;color:var(--av-ink);background:var(--av-chip);border:1px solid var(--av-chipbd);border-radius:8px;padding:6px 11px;cursor:pointer}
+#archviz .av-fbtn:hover{background:rgba(99,102,241,.14)}
+#archviz .av-fbtn.primary{background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;border-color:transparent}
+#archviz .av-fbtn.ghost{background:transparent}
+#archviz .av-progress{width:120px;height:5px;border-radius:99px;background:var(--av-chipbd);overflow:hidden}
+#archviz #av-progress-bar{height:100%;width:0;background:linear-gradient(90deg,#6366f1,#7c3aed);transition:width .3s}
+#archviz #av-fstep{font-size:11px;color:var(--av-mut);font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+
+#archviz .av-underbar{padding:13px 18px;border-top:1px solid var(--av-line);display:flex;flex-direction:column;gap:11px}
+#archviz .av-scenarios,#archviz .av-filters{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+#archviz .av-flabel{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--av-mut);margin-right:4px;font-weight:700}
+#archviz .av-pill-btn{font-family:var(--sans);font-size:11.5px;font-weight:700;color:var(--av-ink);background:var(--av-chip);
+  border:1px solid var(--av-chipbd);border-radius:99px;padding:6px 13px;cursor:pointer;transition:.15s}
+#archviz .av-pill-btn:hover{background:rgba(99,102,241,.14);border-color:rgba(99,102,241,.5)}
+#archviz .av-pill-btn.on{background:linear-gradient(135deg,rgba(99,102,241,.92),rgba(124,58,237,.92));color:#fff;border-color:transparent}
+#archviz .av-pill-btn.danger.on{background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff}
+#archviz .av-filter{font-family:var(--sans);font-size:11px;font-weight:600;color:var(--av-ink);background:var(--av-chip);
+  border:1px solid var(--av-chipbd);border-radius:99px;padding:5px 12px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:6px}
+#archviz .av-filter:hover{background:rgba(99,102,241,.12)}
+#archviz .av-filter.on{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.6);color:var(--av-ink)}
+#archviz .av-filter i{width:9px;height:9px;border-radius:2px;display:inline-block;background:var(--c)}
+#archviz .av-services{display:flex;gap:7px;flex-wrap:wrap}
+#archviz .av-chip{font-family:var(--sans);font-size:11.5px;font-weight:600;color:var(--av-ink);background:var(--av-chip);
+  border:1px solid var(--c,var(--av-chipbd));border-left-width:3px;border-radius:9px;padding:6px 11px;cursor:pointer;transition:.15s}
+#archviz .av-chip small{color:var(--av-mut);font-weight:600}
+#archviz .av-chip:hover{background:rgba(99,102,241,.12)}
+#archviz .av-chip.on{background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--av-ink)}
+#archviz .av-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--av-mut);padding-top:2px}
+#archviz .av-legend span{display:inline-flex;align-items:center;gap:6px}
+#archviz .av-legend i{width:16px;height:3px;border-radius:2px;display:inline-block}
+#archviz .av-legend i.dash{height:0;border-top:2px dashed currentColor;width:16px}
+
+/* ----------- right column ----------- */
+#archviz .av-side{display:flex;flex-direction:column;min-width:0;max-height:792px;background:var(--av-panel)}
+@media(max-width:1000px){#archviz .av-side{max-height:none}}
+#archviz .av-side h5{margin:0;padding:13px 16px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--av-mut);font-weight:800;display:flex;align-items:center;gap:8px}
+#archviz .av-side h5 .ct{margin-left:auto;font-size:10px;color:var(--av-mut);letter-spacing:.04em;opacity:.8}
+#archviz #av-comms{padding:0 12px 10px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;max-height:262px}
+#archviz #av-comms::-webkit-scrollbar,#archviz #av-detail::-webkit-scrollbar{width:8px}
+#archviz #av-comms::-webkit-scrollbar-thumb,#archviz #av-detail::-webkit-scrollbar-thumb{background:var(--av-chipbd);border-radius:8px}
+#archviz .av-row{display:flex;align-items:center;gap:10px;text-align:left;width:100%;font-family:var(--sans);
+  background:var(--av-rowbg);border:1px solid var(--av-rowbd);border-radius:10px;padding:8px 11px;cursor:pointer;transition:.15s;color:var(--av-ink)}
+#archviz .av-row:hover{background:rgba(99,102,241,.10);border-color:var(--c)}
+#archviz .av-row.on{background:color-mix(in srgb,var(--c) 18%,transparent);border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
+#archviz .av-row.rel{border-color:var(--c)}
+#archviz .av-row .av-dot{width:10px;height:10px;border-radius:3px;background:var(--c);box-shadow:0 0 8px var(--c);flex:none}
+#archviz .av-row-main{min-width:0;flex:1}
+#archviz .av-row-t{display:block;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#archviz .av-row-s{display:block;font-size:10.5px;color:var(--av-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#archviz .av-row-tag{font-family:var(--mono);font-size:9.5px;color:var(--av-mut);background:var(--av-chip);
+  border:1px solid var(--av-chipbd);border-radius:6px;padding:2px 6px;flex:none;white-space:nowrap}
+#archviz .av-mini{margin-left:2px}
+
+#archviz #av-detail{border-top:1px solid var(--av-line);padding:14px 16px 18px;overflow-y:auto;flex:1}
+#archviz .av-empty{font-size:12.5px;color:var(--av-mut);line-height:1.65}
+#archviz .av-empty b{color:var(--av-ink)}
+#archviz .av-empty kbd{font-family:var(--mono);font-size:10.5px;background:var(--av-chip);border:1px solid var(--av-chipbd);border-radius:5px;padding:1px 6px;color:var(--av-ink)}
+#archviz .av-d-head{display:flex;align-items:flex-start;gap:11px;padding-bottom:11px;margin-bottom:11px;border-bottom:1px solid var(--av-line)}
+#archviz .av-d-head .av-ic{font-size:21px;line-height:1.1;flex:none}
+#archviz .av-d-title{font-size:14.5px;font-weight:800;color:var(--av-ink)}
+#archviz .av-d-title .av-port{font-family:var(--mono);font-size:11px;color:var(--av-mut);font-weight:600}
+#archviz .av-d-role{font-size:11px;color:var(--av-mut);margin-top:2px;line-height:1.45}
+#archviz .av-cat{color:var(--c);font-weight:600}
+#archviz .av-d-desc{font-size:12px;color:var(--av-ink);opacity:.86;line-height:1.6;margin:0 0 12px}
+#archviz .av-d-sec{margin:11px 0}
+#archviz .av-d-sec h6{margin:0 0 6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--av-mut);font-weight:800}
+#archviz .av-chips{display:flex;gap:5px;flex-wrap:wrap}
+#archviz .av-b{font-family:var(--mono);font-size:10px;font-weight:600;border-radius:7px;padding:3px 8px;line-height:1.4;border:1px solid transparent}
+#archviz .av-b.tls{background:rgba(16,185,129,.14);color:#059669;border-color:rgba(16,185,129,.3)}
+#archviz .av-b.sig{background:rgba(99,102,241,.14);color:#4f46e5;border-color:rgba(99,102,241,.35)}
+#archviz .av-b.idem{background:rgba(13,148,136,.13);color:#0d9488;border-color:rgba(13,148,136,.3)}
+#archviz .av-b.mand{background:rgba(168,85,247,.13);color:#7c3aed;border-color:rgba(168,85,247,.32)}
+#archviz .av-b.un{background:rgba(120,135,165,.14);color:var(--av-mut);border-color:rgba(120,135,165,.3)}
+#archviz .av-b.stk{background:var(--av-chip);color:var(--av-chipink);border-color:var(--av-chipbd)}
+html[data-theme=dark] #archviz .av-b.tls{background:rgba(52,211,153,.14);color:#6ee7b7;border-color:rgba(52,211,153,.3)}
+html[data-theme=dark] #archviz .av-b.sig{background:rgba(99,102,241,.16);color:#a5b4fc;border-color:rgba(129,140,248,.35)}
+html[data-theme=dark] #archviz .av-b.idem{background:rgba(45,212,191,.13);color:#5eead4;border-color:rgba(45,212,191,.3)}
+html[data-theme=dark] #archviz .av-b.mand{background:rgba(192,132,252,.14);color:#d8b4fe;border-color:rgba(192,132,252,.32)}
+#archviz .av-ep,#archviz .av-pl{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+#archviz .av-ep li,#archviz .av-pl li{font-family:var(--mono);font-size:11px;color:var(--av-ink);background:var(--av-rowbg);
+  border:1px solid var(--av-rowbd);border-radius:7px;padding:5px 9px;line-height:1.45}
+#archviz .av-ep li.hit{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
+#archviz .av-pl li{font-family:var(--sans);font-size:11.5px}
+#archviz .av-key{font-size:11.5px;color:var(--av-ink);opacity:.9;line-height:1.5}
+#archviz .av-wire{font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--av-wireink);background:var(--av-wire);
+  border:1px solid var(--av-chipbd);border-radius:9px;padding:11px 12px;margin:0;white-space:pre-wrap;overflow-x:auto}
+#archviz .av-note{font-size:11.5px;color:var(--av-mut);line-height:1.55;border-left:3px solid var(--c);padding:7px 0 7px 11px;margin-top:8px}
+#archviz .av-link{font-size:11px;font-weight:600;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--c) 40%,transparent);border-radius:7px;padding:4px 9px;cursor:pointer;transition:.15s}
+#archviz .av-link:hover{background:color-mix(in srgb,var(--c) 24%,transparent)}
+
+/* ---------- 2D SVG topology stage ---------- */
+#archviz #av-stage{background:
+  radial-gradient(900px 420px at 22% -10%,var(--av-glow1),transparent 60%),
+  radial-gradient(760px 420px at 104% 116%,var(--av-glow2),transparent 55%)}
+#archviz #av-svg{display:block;width:100%;height:100%;touch-action:none;user-select:none}
+#archviz #av-svg .av-grid{stroke:var(--av-line);stroke-width:1;opacity:.55}
+#archviz #av-svg .av-edge{fill:none;stroke-linecap:round;transition:opacity .18s}
+#archviz #av-svg .av-edge.hit{cursor:pointer}
+#archviz #av-svg .av-arrow,#archviz #av-svg .av-marker{transition:opacity .18s}
+#archviz #av-svg .av-elabel-bg{fill:var(--av-panel);stroke-width:1.2;rx:7}
+#archviz #av-svg .av-elabel-tx{font-family:var(--sans);font-size:10.5px;font-weight:700;dominant-baseline:middle;text-anchor:middle}
+#archviz #av-svg .av-packet{pointer-events:none}
+#archviz #av-svg .av-ring{fill:none;stroke-width:1.6;pointer-events:none;opacity:0}
+#archviz #av-svg .av-mover-core{pointer-events:none}
+#archviz #av-svg .av-mover-lbl-bg{fill:var(--av-panel);stroke-width:1.4}
+#archviz #av-svg .av-mover-lbl-tx{font-family:var(--sans);font-size:11px;font-weight:800;dominant-baseline:middle;text-anchor:middle}
+/* nodes */
+#archviz #av-svg .av-node{cursor:pointer}
+#archviz #av-svg .av-node .nbox{fill:var(--av-panel);stroke-width:2;rx:14;
+  filter:drop-shadow(0 10px 20px rgba(15,23,55,.18));transition:transform .15s}
+html[data-theme=dark] #archviz #av-svg .av-node .nbox{filter:drop-shadow(0 12px 24px rgba(0,0,30,.5))}
+#archviz #av-svg .av-node .nstrip{rx:14}
+#archviz #av-svg .av-node .nic{font-size:21px;dominant-baseline:central;text-anchor:middle}
+#archviz #av-svg .av-node .nname{font-family:var(--sans);font-size:13px;font-weight:800;fill:var(--av-ink);dominant-baseline:central}
+#archviz #av-svg .av-node .nsub{font-family:var(--sans);font-size:10.5px;font-weight:600;fill:var(--av-mut);dominant-baseline:central}
+#archviz #av-svg .av-node .nport{font-family:var(--mono);font-size:10px;fill:var(--av-mut);dominant-baseline:central}
+/* enriched node details: port chip + key indicator */
+#archviz #av-svg .av-node .nport-chip{fill:var(--av-chip);stroke-width:1.1;opacity:.9}
+#archviz #av-svg .av-node .nport-tx{font-family:var(--mono);font-size:9.5px;font-weight:600;dominant-baseline:middle;text-anchor:middle}
+#archviz #av-svg .av-node .nkey{font-size:11px;dominant-baseline:middle;text-anchor:middle;opacity:.5}
+/* keyboard focus rings (a11y) */
+#archviz #av-svg .av-node{outline:none}
+#archviz #av-svg .av-node:focus-visible .nbox{stroke-width:3.5}
+#archviz #av-svg .av-node:focus-visible .nstrip{width:9px}
+#archviz #av-svg .av-edge-hit{outline:none}
+#archviz #av-svg .av-edge-hit:focus-visible{stroke:color-mix(in srgb,currentColor 22%,transparent)}
+/* colored glow on the selected edge */
+#archviz #av-svg .av-edge-g.sel .av-edge{filter:drop-shadow(0 0 5px currentColor)}
+#archviz #av-svg .dim{opacity:.12}
+#archviz #av-svg .dimmid{opacity:.4}
+
+/* the flat reference views, collapsible */
+details.av-flat{border:1px solid var(--line);border-radius:12px;background:var(--card);margin:14px 0;padding:0}
+details.av-flat>summary{cursor:pointer;font-weight:700;font-size:13.5px;padding:13px 18px;list-style:none;display:flex;align-items:center;color:var(--ink)}
+details.av-flat>summary::before{content:"\25B8";margin-right:10px;color:var(--accent);transition:transform .15s;display:inline-block}
+details.av-flat[open]>summary::before{transform:rotate(90deg)}
+details.av-flat>summary .ftag{margin-left:auto;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+details.av-flat .av-flat-body{padding:2px 16px 8px}
+</style>
+
+<div class="archviz" id="archviz">
+  <div class="av-bar">
+    <h4><span class="dotpulse"></span>Interactive topology</h4>
+    <span class="sub">click any service or signal &middot; hover for detail &middot; scroll to zoom &middot; drag to pan</span>
+    <div class="av-ctrls">
+      <button class="av-btn" id="av-zoomin">&#x2295; Zoom in</button>
+      <button class="av-btn" id="av-zoomout">&#x2296; Zoom out</button>
+      <button class="av-btn" id="av-reset">&#x27F2; Reset</button>
+      <span class="av-sep"></span>
+      <button class="av-btn on" id="av-play">&#x25B8; Signals</button>
+      <button class="av-btn on" id="av-labels">&#x1F3F7; Labels</button>
+    </div>
+  </div>
+
+  <div class="av-main">
+    <div class="av-left">
+      <div id="av-stage">
+        <div id="av-tip"></div>
+        <div class="av-hint">Click a service or a signal &middot; hover for a quick read &middot; scroll to zoom.</div>
+        <div class="av-watermark">UCP &middot; AP2 live mesh</div>
+        <div id="av-caption"><span class="step" id="av-cap-step"></span><span class="txt" id="av-cap-text"></span></div>
+        <div id="av-flowctrls">
+          <button class="av-fbtn" id="av-fprev">&#x2039; Prev</button>
+          <button class="av-fbtn primary" id="av-fplay">&#x25B6; Play</button>
+          <button class="av-fbtn" id="av-fnext">Next &#x203A;</button>
+          <div class="av-progress"><div id="av-progress-bar"></div></div>
+          <span id="av-fstep">0 / 0</span>
+          <button class="av-fbtn ghost" id="av-fexit">&#x2715; Exit</button>
+        </div>
+      </div>
+      <div class="av-underbar">
+        <div class="av-scenarios">
+          <span class="av-flabel">Scenario</span>
+          <button class="av-pill-btn" id="av-flow">&#x25B6; Play purchase flow</button>
+          <button class="av-pill-btn" id="av-discovery">&#x25C9; Discovery pulse</button>
+          <button class="av-pill-btn danger" id="av-tamper">&#x26A0; Tamper test</button>
+        </div>
+        <div class="av-filters">
+          <span class="av-flabel">Filter</span>
+          <button class="av-filter on" data-filter="all" style="--c:#64748b"><i></i>All</button>
+          <button class="av-filter" data-filter="ucp" style="--c:#6366f1"><i></i>UCP &middot; MCP</button>
+          <button class="av-filter" data-filter="ap2" style="--c:#a855f7"><i></i>AP2 wallet</button>
+          <button class="av-filter" data-filter="ap2pay" style="--c:#d97706"><i></i>AP2 pay</button>
+          <button class="av-filter" data-filter="webhook" style="--c:#0d9488"><i></i>Webhook</button>
+          <button class="av-filter" data-filter="rest" style="--c:#64748b"><i></i>REST</button>
+        </div>
+        <div class="av-services" id="av-services"></div>
+        <div class="av-legend">
+          <span style="color:#6366f1"><i style="background:#6366f1"></i>signed MCP call</span>
+          <span style="color:#0d9488"><i class="dash"></i>signed webhook</span>
+          <span style="color:#64748b"><i class="dash"></i>plain REST</span>
+          <span>&#x25C8; signed &middot; &#x25EF; REST &middot; &#x25C6; webhook</span>
+          <span style="color:#059669">&#x1F512; TLS</span>
+          <span style="color:#4f46e5">&#x270D; RFC 9421</span>
+          <span style="color:#7c3aed">&#x1F3AB; mandate</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="av-side">
+      <h5>Communications<span class="ct">9 edges &middot; click to highlight</span></h5>
+      <div id="av-comms"></div>
+      <h5>Inspector</h5>
+      <div id="av-detail"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   INTERACTIVE 2D TOPOLOGY  -  UCP + AP2 Reference Suite
+   Self-contained, dependency-free SVG. Same data + inspector as before;
+   click services / signals, filter by category, play the purchase flow,
+   run the tamper test, pulse discovery. Light / dark aware via CSS vars.
+   ========================================================================= */
+(function () {
+  "use strict";
+
+  /* ----------------------------- DATA ----------------------------------- */
+  var NODES = {
+    user: {
+      icon: "👤", name: "User", sub: "browser", port: "", color: "#64748b", x: -4, z: -13,
+      role: "The human - Shoppy chat · GPay sheet · Touch ID · Walletly consent · 3-DS page",
+      stack: ["React", "Babel", "WebAuthn"],
+      endpoints: ["(client) demo UI", "consent surface", "3-DS step-up page"],
+      keys: "user device key lives in the wallet (CP), exercised by passkey",
+      desc: "The only human in the loop. Talks only to the Agent; approves spend and biometrics on trusted surfaces hosted by the Credentials Provider and the PSP."
+    },
+    agent: {
+      icon: "🤖", name: "Shopping Agent", sub: "“Shoppy”", port: ":4100", color: "#6366f1", x: -13, z: -2,
+      role: "UCP Platform · AP2 Shopping Agent · the BUYER side",
+      stack: ["Node.js", "TypeScript", "React", "ES256", "OTLP"],
+      endpoints: ["GET /.well-known/ucp", "POST /webhooks/ucp (signed)", "/api/* (UI + SSE)"],
+      keys: "one ES256 platform key, published as a JWK",
+      desc: "Orchestrator · LLM agent loop · 24 scenario flows · audit hash-chain · OTLP exporter. Holds no card data and can spend nothing without the wallet’s signed mandates. A client of everyone’s MCP endpoints - exposes none."
+    },
+    merchant: {
+      icon: "🏪", name: "Merchant Portal", sub: "4 tenants + agent", port: ":4101", color: "#0d9488", x: 13, z: -2,
+      role: "4 × UCP Business + Merchant Agent · the SELL side · multi-tenant gateway",
+      stack: ["Node.js", "TypeScript", "OAuth", "ES256"],
+      endpoints: ["/m/{id}/.well-known/ucp", "/m/{id}/mcp", "/m/{id}/.well-known/oauth-authorization-server", "/oauth/*"],
+      keys: "one ES256 signing key per tenant",
+      desc: "Hosts Wavelength · SoundHub · ElectroMart · AudioNest. Checkout math, detached-JWS merchant_authorization over JCS, the verification gauntlet, OAuth identity linking and signed order webhooks."
+    },
+    cp: {
+      icon: "👛", name: "Credentials Provider", sub: "“Walletly”", port: ":4102", color: "#a855f7", x: -8, z: 11,
+      role: "AP2 Credentials Provider · the user’s TRUST ANCHOR & consent surface",
+      stack: ["Node.js", "TypeScript", "WebAuthn", "SD-JWT+kb", "ES256"],
+      endpoints: ["/mcp", "/.well-known/ucp", "/api/wallet/* (consent UI)"],
+      keys: "service key (SD-JWT issuer) + USER DEVICE KEY (holder)",
+      desc: "Card vault (PCI scope), spend-policy engine, mandate signer, passkey subsystem, single-use token store, consent audit. Policy enforced at mint (gate 1) and sign (gate 2); the snapshot travels in the token for the PSP."
+    },
+    psp: {
+      icon: "🏦", name: "Payment Provider", sub: "“PayStream”", port: ":4103", color: "#d97706", x: 11, z: 11,
+      role: "AP2 Merchant Payment Processor · the MONEY MOVER + network trust layer",
+      stack: ["Node.js", "TypeScript", "KYA", "multi-rail"],
+      endpoints: ["/mcp", "/.well-known/ucp", "/challenge/{id} (3-DS)"],
+      keys: "PSP key (ES256 · published JWK)",
+      desc: "Independently re-verifies the entire mandate chain. Multi-rail authorize / capture / refund (card + RTP), KYA agent registry + reputation, velocity limiter, 3-DS step-up."
+    }
+  };
+
+  var EDGES = [
+    {
+      id: "agent-merchant-ucp", from: "agent", to: "merchant", dir: "fwd", category: "ucp",
+      color: "#6366f1", style: "solid", proto: "UCP · MCP binding", tag: "JSON-RPC", shape: "octa", hits: "/m/{id}/mcp",
+      transport: "JSON-RPC 2.0 tools/call over HTTP",
+      sec: { tls: true, signed: "RFC 9421 + Content-Digest (RFC 9530)", idem: true, mandate: "SD-JWT+kb Checkout Mandate (+ open Checkout Mandate when autonomous)" },
+      endpoints: ["/m/{id}/mcp"],
+      payloads: ["search_catalog · get_product", "create / update / complete_checkout", "get_order · refund · dispute", "carries ap2.checkout_mandate (SD-JWT+kb)", "completion response signed over @status"],
+      sample: "tools/call complete_checkout {\n  checkout:{ payment:{ instruments:[{ credential:{ type:'AP2_COMPOSITE',\n    token:{ network_token, payment_mandate } } }] } },\n  ap2:{ checkout_mandate /* SD-JWT+kb */ } }",
+      offset: -30,
+      note: "Every call is RFC 9421-signed; the merchant signs the completion response over @status."
+    },
+    {
+      id: "agent-merchant-oauth", from: "agent", to: "merchant", dir: "bi", category: "rest",
+      color: "#64748b", style: "dashed", proto: "Identity Linking · OAuth 2.0", tag: "OAuth", shape: "sphere", hits: "/oauth/*",
+      transport: "REST (RFC 8414 discovery · PKCE)",
+      sec: { tls: true, signed: false, idem: false, mandate: "bearer token · scope order:read · PKCE" },
+      endpoints: ["/m/{id}/.well-known/oauth-authorization-server", "/oauth/authorize", "/oauth/token"],
+      payloads: ["authorization code → access token", "scope dev.ucp.shopping.order:read", "token then used on list_orders via MCP"],
+      sample: "GET /oauth/authorize?…PKCE   →   POST /oauth/token\n→ { access_token, scope:'dev.ucp.shopping.order:read' }",
+      offset: 0,
+      note: "A browser/HTTP convention - not a UCP capability call, so not RFC 9421-signed."
+    },
+    {
+      id: "merchant-agent-webhook", from: "merchant", to: "agent", dir: "fwd", category: "webhook",
+      color: "#0d9488", style: "dashed", proto: "UCP order webhook", tag: "webhook", shape: "diamond", hits: "POST /webhooks/ucp (signed)",
+      transport: "REST POST · RFC 9421-signed",
+      sec: { tls: true, signed: "RFC 9421 + Content-Digest", idem: false, mandate: "—" },
+      endpoints: ["POST /webhooks/ucp"],
+      payloads: ["order.shipped / delivered / refunded", "full Order object (order.json)", "events: carrier · tracking_number"],
+      sample: "POST /webhooks/ucp  (Signature-Input, Signature, Content-Digest)\n{ order:{ id, fulfillment:{ events:[{ type:'shipped',\n  carrier:'UPS', tracking_number:'1Z…' }] } } }",
+      offset: 30,
+      note: "Signed so the agent can trust “it shipped” before telling the user."
+    },
+    {
+      id: "agent-cp", from: "agent", to: "cp", dir: "fwd", category: "ap2",
+      color: "#a855f7", style: "solid", proto: "AP2 wallet ops · MCP", tag: "JSON-RPC", shape: "octa", hits: "/mcp",
+      transport: "JSON-RPC 2.0 tools/call (signed)",
+      sec: { tls: true, signed: "RFC 9421 + Content-Digest", idem: true, mandate: "mandates signed by the USER DEVICE KEY" },
+      endpoints: ["/mcp"],
+      payloads: ["list_payment_methods", "mint_instrument  ← policy gate 1", "sign_mandate (Checkout / Payment, open or closed) ← gate 2", "passkey_* · request / check_approval", "get_agent_policy"],
+      sample: "tools/call sign_mandate { kind:'PaymentMandate',\n  payload:{ amount:{ amount:32913, currency:'USD' }, payee, checkout_id } }\n→ SD-JWT+kb (device key)",
+      offset: 0,
+      note: "Spend policy is enforced here; mandates are signed by the user’s device key."
+    },
+    {
+      id: "merchant-psp", from: "merchant", to: "psp", dir: "fwd", category: "ap2pay",
+      color: "#d97706", style: "solid", proto: "AP2 payment processing · MCP", tag: "JSON-RPC", shape: "octa", hits: "/mcp",
+      transport: "JSON-RPC 2.0 tools/call (signed)",
+      sec: { tls: true, signed: "RFC 9421 + Content-Digest", idem: true, mandate: "AP2_COMPOSITE token + Payment Mandate" },
+      endpoints: ["/mcp"],
+      payloads: ["lookup_agent  ← KYA gate", "authorize_payment (composite token + payment_mandate)", "capture · refund_payment", "3-DS requires_challenge"],
+      sample: "tools/call authorize_payment {\n  credential:{ type:'AP2_COMPOSITE', token:{ network_token, payment_mandate } } }\n→ { status:'authorized' | 'requires_challenge' }",
+      offset: 0,
+      note: "The PSP re-verifies the whole chain independently of the merchant."
+    },
+    {
+      id: "psp-cp", from: "psp", to: "cp", dir: "fwd", category: "ap2",
+      color: "#c084fc", style: "solid", proto: "AP2 release_credentials · MCP", tag: "JSON-RPC", shape: "octa", hits: "/mcp",
+      transport: "JSON-RPC 2.0 tools/call (signed)",
+      sec: { tls: true, signed: "RFC 9421 + Content-Digest", idem: true, mandate: "single-use token (≤2 releases)" },
+      endpoints: ["/mcp"],
+      payloads: ["single-use token → real credentials + behavior", "+ token-bound policy snapshot ← gate 3", "+ settlement rail (card / RTP)"],
+      sample: "tools/call release_credentials { token:'tok_…' }\n→ { pan_ref, behavior, policy_snapshot, rail }",
+      offset: 0,
+      note: "Credentials are released only after the PSP’s independent verification."
+    },
+    {
+      id: "user-agent", from: "user", to: "agent", dir: "bi", category: "rest",
+      color: "#64748b", style: "dashed", proto: "Demo UI · REST + SSE", tag: "REST", shape: "sphere", hits: "/api/* (UI + SSE)",
+      transport: "REST + Server-Sent Events",
+      sec: { tls: true, signed: false, idem: false, mandate: "same-origin session" },
+      endpoints: ["/api/*"],
+      payloads: ["chat messages · product cards", "live protocol-trace stream (SSE)"],
+      sample: "GET /api/trace  (text/event-stream)\nevent: span  data:{ name:'complete_checkout', … }",
+      offset: 0,
+      note: "Not part of the UCP / AP2 protocols - just how the demo UI talks to its own backend."
+    },
+    {
+      id: "user-cp", from: "user", to: "cp", dir: "bi", category: "rest",
+      color: "#64748b", style: "dashed", proto: "Consent surface · REST", tag: "REST", shape: "sphere", hits: "/api/wallet/* (consent UI)",
+      transport: "REST (same-origin)",
+      sec: { tls: true, signed: false, idem: false, mandate: "passkey UV (WebAuthn assertion · UV=1)" },
+      endpoints: ["/api/wallet/*"],
+      payloads: ["spend-policy editor · approval inbox", "passkey enrollment + Touch ID assertion", "token revocation · consent audit"],
+      sample: "POST /api/wallet/policy { cap:{amount:10000}, allowlist:[…] }\nWebAuthn: challenge = SHA-256(JCS(checkout − ap2)), UV=1",
+      offset: 0,
+      note: "The user’s trusted surface for everything money-related."
+    },
+    {
+      id: "user-psp", from: "user", to: "psp", dir: "bi", category: "rest",
+      color: "#64748b", style: "dashed", proto: "3-DS step-up · REST", tag: "3-DS", shape: "sphere", hits: "/challenge/{id} (3-DS)",
+      transport: "REST (browser redirect)",
+      sec: { tls: true, signed: false, idem: false, mandate: "issuer 3-DS challenge" },
+      endpoints: ["/challenge/{id}"],
+      payloads: ["continue_url opens the bank step-up page", "challenge → resolve → resume checkout"],
+      sample: "302 → /challenge/{id}  (continue_url)\n→ user passes 3-DS → resume complete_checkout",
+      offset: 0,
+      note: "Only when the issuer requires 3-D Secure (requires_escalation)."
+    }
+  ];
+
+  var CAT_LABEL = {
+    ucp: "UCP capability · MCP",
+    ap2: "AP2 wallet / credentials",
+    ap2pay: "AP2 payment processing",
+    webhook: "Signed order webhook",
+    rest: "Plain REST (UI · OAuth · 3-DS)"
+  };
+
+  var TENANTS = ["Wavelength", "SoundHub", "ElectroMart", "AudioNest"];
+
+  /* Guided purchase flow - ordered, references real edges + tool names */
+  var FLOW = [
+    { edge: "user-agent",          tool: "prompt",             cap: "You ask Shoppy to buy the SoundWave headphones. The agent UI streams a live protocol trace over SSE - not part of UCP/AP2." },
+    { edge: "agent-merchant-ucp",  tool: "search_catalog",     cap: "The agent resolves the merchant via /.well-known/ucp, then calls search_catalog / get_product over the signed MCP binding." },
+    { edge: "agent-cp",            tool: "get_agent_policy",   cap: "Agent reads the spend policy from the wallet: caps, budget, allowlist, autonomy and the allowed settlement rail." },
+    { edge: "agent-merchant-ucp",  tool: "create_checkout",    cap: "create_checkout opens the cart. The merchant computes line items, tax and the total, and signs merchant_authorization." },
+    { edge: "agent-cp",            tool: "mint_instrument",    cap: "GATE 1 - the wallet mints a single-use instrument only if the purchase is inside policy (else policy_*_violation)." },
+    { edge: "agent-cp",            tool: "sign_mandate",       cap: "GATE 2 - the user’s device key signs the Payment + Checkout mandates as SD-JWT+kb. No spend without this signature." },
+    { edge: "agent-merchant-ucp",  tool: "complete_checkout",  cap: "Agent submits complete_checkout with the AP2 composite credential + checkout_mandate. Response is signed over @status." },
+    { edge: "merchant-psp",        tool: "lookup_agent",       cap: "KYA GATE - the PSP checks the agent registry + reputation before any money moves." },
+    { edge: "merchant-psp",        tool: "authorize_payment",  cap: "authorize_payment re-verifies the entire mandate chain independently (composite token + payment_mandate)." },
+    { edge: "psp-cp",              tool: "release_credentials", cap: "GATE 3 - the PSP releases real credentials against the single-use token + a token-bound policy snapshot." },
+    { edge: "merchant-psp",        tool: "capture",            cap: "The PSP captures the authorized amount on the chosen rail (card or RTP)." },
+    { edge: "merchant-agent-webhook", tool: "order.shipped",   cap: "Later, a signed order webhook tells the agent it shipped - verified via RFC 9421 before the user is notified." }
+  ];
+
+  /* --------------------------- BOOTSTRAP -------------------------------- */
+  var stage = document.getElementById("av-stage");
+  if (!stage) return;
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var DARK = (document.documentElement.dataset.theme === "dark");
+
+  /* ----------------------------- LAYOUT --------------------------------- */
+  var VBW = 1000, VBH = 650;
+  function sx(x) { return 500 + x * 29.2; }
+  function sy(z) { return 345 + z * 19.6; }
+  var NW = 202, NH = 70;                 // node card size
+  Object.keys(NODES).forEach(function (id) { var n = NODES[id]; n._cx = sx(n.x); n._cy = sy(n.z); });
+
+  // group parallel edges by unordered pair → lateral offsets so they don't overlap
+  (function assignOffsets() {
+    var byPair = {};
+    EDGES.forEach(function (e) { var k = [e.from, e.to].sort().join("~"); (byPair[k] = byPair[k] || []).push(e); });
+    Object.keys(byPair).forEach(function (k) {
+      var arr = byPair[k];
+      if (arr.length === 1) { if (arr[0].offset == null) arr[0].offset = 0; return; }
+      var span = 30, start = -span * (arr.length - 1) / 2;
+      arr.forEach(function (e, i) { e.offset = start + i * span; });
+    });
+  })();
+
+  function edgePathD(e) {
+    var a = NODES[e.from], b = NODES[e.to];
+    var ax = a._cx, ay = a._cy, bx = b._cx, by = b._cy;
+    var dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+    var px = -dy / len, py = dx / len;              // unit perpendicular
+    var off = e.offset || 0;
+    var mx = (ax + bx) / 2 + px * off, my = (ay + by) / 2 + py * off;
+    return "M" + ax.toFixed(1) + " " + ay.toFixed(1) + " Q" + mx.toFixed(1) + " " + my.toFixed(1) + " " + bx.toFixed(1) + " " + by.toFixed(1);
+  }
+
+  /* ----------------------------- SVG BUILD ------------------------------ */
+  // wipe any prior canvas/fallback
+  Array.prototype.slice.call(stage.querySelectorAll("canvas,#av-svg,.av-fallback")).forEach(function (n) { n.remove(); });
+
+  var svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("id", "av-svg");
+  svg.setAttribute("viewBox", "0 0 " + VBW + " " + VBH);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Interactive topology of the UCP + AP2 reference suite — the User, Shopping Agent, Merchant Portal, Credentials Provider and Payment Provider, and the signed calls between them. Use Tab to focus a service or signal, Enter to inspect it.");
+  (function () {
+    var t = document.createElementNS(SVGNS, "title"); t.textContent = "UCP + AP2 topology"; svg.appendChild(t);
+    var d = document.createElementNS(SVGNS, "desc"); d.textContent = "Five participants and the protocol calls between them; solid = signed MCP, dashed = REST/webhook. Click a node or edge for endpoints, payloads, keys and security."; svg.appendChild(d);
+  })();
+  // keep overlays (tip, caption, flow ctrls, hint) above the svg
+  stage.insertBefore(svg, stage.firstChild);
+
+  function mk(tag, attrs, parent) {
+    var n = document.createElementNS(SVGNS, tag);
+    if (attrs) for (var k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  var cam = mk("g", { id: "av-cam" }, svg);
+
+  // subtle grid
+  var grid = mk("g", { class: "av-grid-g" }, cam);
+  for (var gx = 0; gx <= VBW; gx += 50) mk("line", { class: "av-grid", x1: gx, y1: 0, x2: gx, y2: VBH }, grid);
+  for (var gy = 0; gy <= VBH; gy += 50) mk("line", { class: "av-grid", x1: 0, y1: gy, x2: VBW, y2: gy }, grid);
+
+  var gEdges = mk("g", { id: "av-edges" }, cam);
+  var gRings = mk("g", { id: "av-rings" }, cam);
+  var gNodes = mk("g", { id: "av-nodes" }, cam);
+  var gOver = mk("g", { id: "av-over" }, cam);   // arrowheads, markers, labels, packets, mover (on top)
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  /* ----- edges (drawn behind nodes) ----- */
+  var edgeEls = {};
+  EDGES.forEach(function (e) {
+    var d = edgePathD(e);
+    var g = mk("g", { class: "av-edge-g", "data-edge": e.id }, gEdges);
+    g.style.color = e.color; // lets CSS use currentColor for the selected glow
+    var aria = NODES[e.from].name + (e.dir === "bi" ? " ↔ " : " → ") + NODES[e.to].name + " — " + e.proto;
+    var hit = mk("path", { class: "av-edge-hit", d: d, fill: "none", stroke: "transparent", "stroke-width": 18, "data-edge": e.id, tabindex: "0", role: "button", "aria-label": aria }, g);
+    var sw = e.style === "solid" ? 3 : 2.2;
+    var vis = mk("path", { class: "av-edge hit", d: d, stroke: e.color, "stroke-width": sw, "data-edge": e.id }, g);
+    if (e.style === "dashed") vis.setAttribute("stroke-dasharray", "7 6");
+    edgeEls[e.id] = { g: g, path: vis, hit: hit, packets: [], len: 0, l0: 0, l1: 0 };
+  });
+
+  /* ----- nodes (opaque cards on top of edges) ----- */
+  var nodeEls = {};
+  Object.keys(NODES).forEach(function (id) {
+    var n = NODES[id], cx = n._cx, cy = n._cy, x = cx - NW / 2, y = cy - NH / 2;
+    var g = mk("g", { class: "av-node", "data-node": id, tabindex: "0", role: "button",
+      "aria-label": n.name + (n.port ? " " + n.port : "") + " — " + n.role }, gNodes);
+    mk("rect", { class: "nbox", x: x, y: y, width: NW, height: NH, rx: 14, stroke: n.color }, g);
+    mk("rect", { class: "nstrip", x: x, y: y, width: 6, height: NH, rx: 3, fill: n.color }, g);
+    mk("text", { class: "nic", x: x + 26, y: cy }, g).textContent = n.icon;
+    mk("text", { class: "nname", x: x + 44, y: cy - 9 }, g).textContent = n.name;
+    mk("text", { class: "nsub", x: x + 44, y: cy + 11 }, g).textContent = n.sub;
+    // port chip (top-right) + key indicator (services that hold signing keys)
+    if (n.port) {
+      var pw = n.port.length * 6.2 + 13;
+      mk("rect", { class: "nport-chip", x: x + NW - pw - 10, y: y + 8, width: pw, height: 16, rx: 8, stroke: n.color }, g);
+      mk("text", { class: "nport-tx", x: x + NW - pw / 2 - 10, y: y + 16.5, fill: n.color }, g).textContent = n.port;
+      mk("text", { class: "nkey", x: x + NW - 17, y: y + NH - 11 }, g).textContent = "🔑";
+    }
+    // discovery rings (hidden until pulse)
+    var rings = [];
+    for (var ri = 0; ri < 3; ri++) rings.push(mk("circle", { class: "av-ring", cx: cx, cy: cy, r: 8, stroke: n.color }, gRings));
+    nodeEls[id] = { g: g, box: g.querySelector(".nbox"), rings: rings, flash: 0, cx: cx, cy: cy };
+  });
+
+  /* ----- measure edges → visible segment (between node borders) + overlays ----- */
+  function outside(pt, n) {
+    var hw = NW / 2 + 2, hh = NH / 2 + 2;
+    return Math.abs(pt.x - n._cx) > hw || Math.abs(pt.y - n._cy) > hh;
+  }
+  function buildOverlays() {
+    EDGES.forEach(function (e) {
+      var o = edgeEls[e.id], p = o.path, L = p.getTotalLength();
+      o.len = L;
+      var a = NODES[e.from], b = NODES[e.to];
+      var l0 = 0, l1 = L, step = Math.max(2, L / 120);
+      for (var l = 0; l <= L; l += step) { if (outside(p.getPointAtLength(l), a)) { l0 = l; break; } }
+      for (var l2 = L; l2 >= 0; l2 -= step) { if (outside(p.getPointAtLength(l2), b)) { l1 = l2; break; } }
+      o.l0 = l0; o.l1 = l1;
+
+      // arrowhead at target boundary (and source boundary for bi)
+      o.arrows = [];
+      o.arrows.push(arrowAt(e, p, l1, +1));
+      if (e.dir === "bi") o.arrows.push(arrowAt(e, p, l0, -1));
+
+      // midpoint shape marker
+      var mL = (l0 + l1) / 2, mp = p.getPointAtLength(mL);
+      o.marker = markerShape(e, mp.x, mp.y);
+
+      // edge label pill near midpoint
+      var lab = shortLabel(e.proto);
+      var lw = lab.length * 5.7 + 16;
+      var lg = mk("g", { class: "av-elabel", "data-edge": e.id }, gOver);
+      mk("rect", { class: "av-elabel-bg", x: mp.x - lw / 2, y: mp.y - 9, width: lw, height: 18, rx: 7, stroke: e.color }, lg);
+      mk("text", { class: "av-elabel-tx", x: mp.x, y: mp.y + 1, fill: e.color }, lg).textContent = lab;
+      o.label = lg;
+
+      // packets
+      o.packets = [];
+      var n2 = 2;
+      for (var pi = 0; pi < n2; pi++) {
+        var pg = mk("g", { class: "av-packet" }, gOver);
+        mk("circle", { class: "pk-halo", r: 9, fill: e.color, opacity: 0.18 }, pg);
+        mk("circle", { class: "pk-core", r: 3.4, fill: e.color }, pg);
+        o.packets.push({ g: pg, phase: pi / n2, rev: (e.dir === "bi" && pi % 2 === 1) });
+      }
+    });
+
+    // mover (flow + tamper courier) — single, reused
+    mover.g = mk("g", { id: "av-mover", visibility: "hidden" }, gOver);
+    mover.halo = mk("circle", { r: 13, fill: "#818cf8", opacity: 0.25 }, mover.g);
+    mover.core = mk("circle", { r: 6.5, fill: "#818cf8" }, mover.g);
+    mover.lblG = mk("g", {}, mover.g);
+    mover.lblBg = mk("rect", { class: "av-mover-lbl-bg", x: -50, y: -34, width: 100, height: 19, rx: 8, stroke: "#818cf8" }, mover.lblG);
+    mover.lblTx = mk("text", { class: "av-mover-lbl-tx", x: 0, y: -24, fill: DARK ? "#f1f5ff" : "#1b2030" }, mover.lblG);
+  }
+  function arrowAt(e, p, l, sign) {
+    var a = p.getPointAtLength(l), back = p.getPointAtLength(Math.max(0, Math.min(o_len(e), l - sign * 3)));
+    var ang = Math.atan2((a.y - back.y) * sign, (a.x - back.x) * sign) * 180 / Math.PI;
+    var tri = mk("path", { class: "av-arrow", d: "M0 0 L-9 -4.5 L-9 4.5 Z", fill: e.color }, gOver);
+    tri.setAttribute("transform", "translate(" + a.x.toFixed(1) + "," + a.y.toFixed(1) + ") rotate(" + ang.toFixed(1) + ")");
+    return tri;
+  }
+  function o_len(e) { return edgeEls[e.id].len; }
+  function markerShape(e, x, y) {
+    var g = mk("g", { class: "av-marker", "data-edge": e.id }, gOver), s;
+    if (e.shape === "sphere") {
+      s = mk("circle", { cx: x, cy: y, r: 6.5, fill: e.color, stroke: "#fff", "stroke-width": 1.4 }, g);
+    } else if (e.shape === "diamond") {
+      s = mk("path", { d: diamond(x, y, 7.5), fill: e.color, stroke: "#fff", "stroke-width": 1.4 }, g);
+    } else { // octa
+      s = mk("path", { d: octa(x, y, 7.5), fill: e.color, stroke: "#fff", "stroke-width": 1.2 }, g);
+    }
+    return g;
+  }
+  function diamond(x, y, r) { return "M" + x + " " + (y - r) + " L" + (x + r) + " " + y + " L" + x + " " + (y + r) + " L" + (x - r) + " " + y + " Z"; }
+  function octa(x, y, r) {
+    var pts = [], k = r * 0.41;
+    var c = [[k, r], [r, k], [r, -k], [k, -r], [-k, -r], [-r, -k], [-r, k], [-k, r]];
+    for (var i = 0; i < c.length; i++) pts.push((x + c[i][0]).toFixed(1) + " " + (y + c[i][1]).toFixed(1));
+    return "M" + pts.join(" L") + " Z";
+  }
+  function shortLabel(s) { s = s.split(" · ")[0]; return s.length > 22 ? s.slice(0, 21) + "…" : s; }
+
+  /* ----------------------------- STATE ---------------------------------- */
+  var selKind = null, selId = null, hoverKind = null, hoverId = null, activeFilter = "all";
+  var playing = true, showLabels = true, discoveryOn = false;
+  var flow = { active: false, i: 0, t: 0, playing: true };
+  var tamper = { active: false, t: 0 };
+  var mover = {};
+
+  function findEdge(id) { for (var i = 0; i < EDGES.length; i++) if (EDGES[i].id === id) return EDGES[i]; return null; }
+  function relatedEdges(nodeId) { return EDGES.filter(function (e) { return e.from === nodeId || e.to === nodeId; }).map(function (e) { return e.id; }); }
+
+  /* ----------------------------- VISIBILITY ----------------------------- */
+  function applyVisibility() {
+    EDGES.forEach(function (e) {
+      var o = edgeEls[e.id];
+      var passFilter = activeFilter === "all" || e.category === activeFilter;
+      var emphasis = 1;
+      if (selKind === "edge") emphasis = (e.id === selId) ? 1 : 0.12;
+      else if (selKind === "node") emphasis = (e.from === selId || e.to === selId) ? 1 : 0.12;
+      else if (hoverKind === "edge" && hoverId) emphasis = (e.id === hoverId) ? 1 : 0.45;
+      var shown = passFilter;
+      var op = shown ? emphasis : 0;
+      o.g.style.opacity = op;
+      o.g.style.display = shown ? "" : "none";
+      if (o.arrows) o.arrows.forEach(function (ar) { ar.style.opacity = op; ar.style.display = shown ? "" : "none"; });
+      if (o.marker) { o.marker.style.opacity = op; o.marker.style.display = shown ? "" : "none"; }
+      var labOn = shown && showLabels && emphasis > 0.4;
+      if (o.label) { o.label.style.opacity = labOn ? Math.min(1, emphasis) : 0; o.label.style.display = labOn ? "" : "none"; }
+      var sel = e.id === selId, hov = (hoverKind === "edge" && e.id === hoverId);
+      o.g.classList.toggle("sel", sel);   // CSS adds a colored glow to the selected edge
+      o.path.setAttribute("stroke-width", (e.style === "solid" ? 3 : 2.2) * (sel ? 1.7 : hov ? 1.3 : 1));
+      o.packets.forEach(function (pk) {
+        pk.g.style.opacity = (shown && playing) ? Math.min(1, emphasis) : 0;
+        var sc = sel ? 1.5 : hov ? 1.25 : 1;
+        pk.g.querySelector(".pk-core").setAttribute("r", 3.4 * sc);
+        pk.g.querySelector(".pk-halo").setAttribute("r", 9 * sc);
+      });
+    });
+    Object.keys(NODES).forEach(function (id) {
+      var o = nodeEls[id], n = NODES[id];
+      var emphasis = 1;
+      if (selKind === "node") emphasis = (id === selId) ? 1 : 0.42;
+      else if (selKind === "edge") { var e = findEdge(selId); emphasis = (e && (e.from === id || e.to === id)) ? 1 : 0.42; }
+      else if (hoverKind === "node" && hoverId) emphasis = (id === hoverId) ? 1 : 0.6;
+      o.g.style.opacity = emphasis;
+      o.g.classList.toggle("sel", (id === selId && selKind === "node"));
+      o.box.setAttribute("stroke-width", (id === selId && selKind === "node") ? 3.5 : (id === hoverId && hoverKind === "node") ? 3 : 2);
+    });
+  }
+
+  /* ----------------------------- SELECTION ------------------------------ */
+  function selectEdge(id) { selKind = "edge"; selId = id; applyVisibility(); renderDetail("edge", id); syncUI(); }
+  function selectNode(id) { selKind = "node"; selId = id; applyVisibility(); renderDetail("node", id); syncUI(); }
+  function clearSelection() { selKind = null; selId = null; applyVisibility(); renderDetail(null); syncUI(); }
+
+  /* --------------------------- HTML PANELS ------------------------------ */
+  function lockBadges(e) {
+    var out = ['<span class="av-b tls">🔒 TLS</span>'];
+    if (e.sec.signed) out.push('<span class="av-b sig">✍ ' + esc(String(e.sec.signed)) + '</span>');
+    else out.push('<span class="av-b un">unsigned</span>');
+    if (e.sec.idem) out.push('<span class="av-b idem">♻ Idempotency-Key</span>');
+    if (e.sec.mandate && e.sec.mandate !== "—") out.push('<span class="av-b mand">🎫 ' + esc(e.sec.mandate) + '</span>');
+    return out.join("");
+  }
+  function renderDetail(kind, id) {
+    var el = document.getElementById("av-detail"); if (!el) return;
+    if (!kind) {
+      el.innerHTML = '<div class="av-empty"><b>Nothing selected.</b><br>Click a <b>service</b> or a <b>signal</b> — in the diagram, the Communications list, or the chips. ' +
+        'Try <kbd>▶ Play purchase flow</kbd> to watch the real end-to-end sequence, or <kbd>⚠ Tamper test</kbd> to see a signature check reject an altered request. ' +
+        'Scroll to zoom and drag to pan.</div>';
+      return;
+    }
+    if (kind === "node") {
+      var n = NODES[id];
+      el.innerHTML =
+        '<div class="av-d-head" style="--c:' + n.color + '"><span class="av-ic">' + n.icon + '</span>' +
+        '<div><div class="av-d-title">' + esc(n.name) + (n.port ? ' <span class="av-port">' + n.port + '</span>' : '') + '</div>' +
+        '<div class="av-d-role">' + esc(n.role) + '</div></div></div>' +
+        '<p class="av-d-desc">' + esc(n.desc) + '</p>' +
+        '<div class="av-d-sec"><h6>Stack</h6><div class="av-chips">' + n.stack.map(function (s) { return '<span class="av-b stk">' + esc(s) + '</span>'; }).join("") + '</div></div>' +
+        '<div class="av-d-sec"><h6>Endpoints exposed</h6><ul class="av-ep">' + n.endpoints.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join("") + '</ul></div>' +
+        '<div class="av-d-sec"><h6>Keys</h6><div class="av-key">🔑 ' + esc(n.keys) + '</div></div>' +
+        '<div class="av-d-sec"><h6>Talks over</h6><div class="av-chips">' +
+        relatedEdges(id).map(function (eid) { var e = findEdge(eid); return '<span class="av-link" data-edge="' + eid + '" style="--c:' + e.color + '">' + esc(e.proto) + '</span>'; }).join("") + '</div></div>';
+      wireDetailLinks(); return;
+    }
+    var e = findEdge(id), fromN = NODES[e.from], toN = NODES[e.to];
+    el.innerHTML =
+      '<div class="av-d-head" style="--c:' + e.color + '"><span class="av-ic">' + fromN.icon + '→' + toN.icon + '</span>' +
+      '<div><div class="av-d-title">' + esc(e.proto) + '</div>' +
+      '<div class="av-d-role">' + esc(fromN.name) + (e.dir === "bi" ? " ↔ " : " → ") + esc(toN.name) + ' · <span class="av-cat">' + esc(CAT_LABEL[e.category]) + '</span></div></div></div>' +
+      '<div class="av-d-sec"><h6>Transport</h6><div class="av-key">' + esc(e.transport) + '</div></div>' +
+      '<div class="av-d-sec"><h6>Security</h6><div class="av-chips">' + lockBadges(e) + '</div></div>' +
+      '<div class="av-d-sec"><h6>Endpoints — target ' + esc(toN.name) + '</h6><ul class="av-ep">' + e.endpoints.map(function (s) { return '<li class="' + (s === e.hits || e.hits.indexOf(s) >= 0 ? "hit" : "") + '" style="--c:' + e.color + '">' + esc(s) + '</li>'; }).join("") + '</ul></div>' +
+      '<div class="av-d-sec"><h6>Payloads it can carry</h6><ul class="av-pl">' + e.payloads.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join("") + '</ul></div>' +
+      '<div class="av-d-sec"><h6>On the wire</h6><pre class="av-wire">' + esc(e.sample) + '</pre></div>' +
+      '<div class="av-note" style="--c:' + e.color + '">' + esc(e.note) + '</div>';
+  }
+  function wireDetailLinks() {
+    document.querySelectorAll("#av-detail .av-link").forEach(function (a) {
+      a.addEventListener("click", function () { selectEdge(a.getAttribute("data-edge")); });
+    });
+  }
+  function buildPanels() {
+    var comms = document.getElementById("av-comms");
+    if (comms) {
+      comms.innerHTML = EDGES.map(function (e) {
+        var f = NODES[e.from], t = NODES[e.to];
+        var locks = (e.sec.signed ? '<span class="av-mini">✍</span>' : '') + '<span class="av-mini">🔒</span>';
+        return '<button class="av-row" data-edge="' + e.id + '" style="--c:' + e.color + '">' +
+          '<span class="av-dot"></span>' +
+          '<span class="av-row-main"><span class="av-row-t">' + f.icon + ' ' + (e.dir === "bi" ? "↔" : "→") + ' ' + t.icon + '  ' + esc(e.proto) + '</span>' +
+          '<span class="av-row-s">' + esc(e.transport) + '</span></span>' +
+          '<span class="av-row-tag">' + esc(e.tag) + ' ' + locks + '</span></button>';
+      }).join("");
+      comms.querySelectorAll(".av-row").forEach(function (b) { b.addEventListener("click", function () { selectEdge(b.getAttribute("data-edge")); }); });
+    }
+    var svc = document.getElementById("av-services");
+    if (svc) {
+      svc.innerHTML = Object.keys(NODES).map(function (id) {
+        var n = NODES[id];
+        return '<button class="av-chip" data-node="' + id + '" style="--c:' + n.color + '">' + n.icon + ' ' + esc(n.name) + (n.port ? ' <small>' + n.port + '</small>' : '') + '</button>';
+      }).join("");
+      svc.querySelectorAll(".av-chip").forEach(function (b) { b.addEventListener("click", function () { selectNode(b.getAttribute("data-node")); }); });
+    }
+  }
+  function syncUI() {
+    document.querySelectorAll("#av-comms .av-row").forEach(function (b) {
+      b.classList.toggle("on", selKind === "edge" && b.getAttribute("data-edge") === selId);
+      var e = findEdge(b.getAttribute("data-edge"));
+      b.classList.toggle("rel", !!(selKind === "node" && e && (e.from === selId || e.to === selId)));
+    });
+    document.querySelectorAll("#av-services .av-chip").forEach(function (b) {
+      b.classList.toggle("on", selKind === "node" && b.getAttribute("data-node") === selId);
+    });
+  }
+
+  /* ----------------------------- INTERACTION ---------------------------- */
+  function onActivate(ev, fn) { if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") { ev.preventDefault(); fn(); } }
+  // hover + click + keyboard on nodes
+  Object.keys(nodeEls).forEach(function (id) {
+    var g = nodeEls[id].g;
+    g.addEventListener("mouseenter", function (ev) { hoverId = id; hoverKind = "node"; applyVisibility(); showTip(ev); });
+    g.addEventListener("mousemove", function (ev) { showTip(ev); });
+    g.addEventListener("mouseleave", function () { hoverId = null; hoverKind = null; hideTip(); applyVisibility(); });
+    g.addEventListener("click", function (ev) { ev.stopPropagation(); selectNode(id); });
+    g.addEventListener("focus", function () { hoverId = id; hoverKind = "node"; applyVisibility(); });
+    g.addEventListener("blur", function () { if (hoverId === id) { hoverId = null; hoverKind = null; applyVisibility(); } });
+    g.addEventListener("keydown", function (ev) { onActivate(ev, function () { selectNode(id); }); });
+  });
+  // hover + click + keyboard on edges (use the wide hit path)
+  EDGES.forEach(function (e) {
+    var o = edgeEls[e.id];
+    [o.hit, o.path].forEach(function (p) {
+      p.addEventListener("mouseenter", function (ev) { hoverId = e.id; hoverKind = "edge"; applyVisibility(); showTip(ev); });
+      p.addEventListener("mousemove", function (ev) { showTip(ev); });
+      p.addEventListener("mouseleave", function () { hoverId = null; hoverKind = null; hideTip(); applyVisibility(); });
+      p.addEventListener("click", function (ev) { ev.stopPropagation(); selectEdge(e.id); });
+    });
+    o.hit.addEventListener("focus", function () { hoverId = e.id; hoverKind = "edge"; applyVisibility(); });
+    o.hit.addEventListener("blur", function () { if (hoverId === e.id) { hoverId = null; hoverKind = null; applyVisibility(); } });
+    o.hit.addEventListener("keydown", function (ev) { onActivate(ev, function () { selectEdge(e.id); }); });
+  });
+
+  /* tooltip */
+  var tip = document.getElementById("av-tip");
+  function showTip(ev) {
+    if (!tip || !hoverKind) return;
+    var html;
+    if (hoverKind === "node") { var n = NODES[hoverId]; html = '<b>' + n.icon + " " + esc(n.name) + '</b>' + (n.port ? " " + n.port : "") + '<br><span>' + esc(n.role) + '</span>'; tip.style.setProperty("--c", n.color); }
+    else { var e = findEdge(hoverId); html = '<b style="color:' + e.color + '">' + esc(e.proto) + '</b><br><span>' + esc(e.transport) + (e.sec.signed ? " · ✍ signed" : "") + '</span>'; tip.style.setProperty("--c", e.color); }
+    tip.innerHTML = html; tip.style.display = "block";
+    var r = stage.getBoundingClientRect();
+    tip.style.left = Math.max(6, Math.min(ev.clientX - r.left + 14, r.width - 250)) + "px";
+    tip.style.top = Math.max(6, Math.min(ev.clientY - r.top + 12, r.height - 70)) + "px";
+  }
+  function hideTip() { if (tip) tip.style.display = "none"; }
+
+  /* ----------------------------- PAN / ZOOM ----------------------------- */
+  var view = { s: 1, tx: 0, ty: 0 };
+  function applyCam() { cam.setAttribute("transform", "translate(" + view.tx.toFixed(1) + "," + view.ty.toFixed(1) + ") scale(" + view.s.toFixed(3) + ")"); }
+  function clientToVB(ev) {
+    var r = svg.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) / r.width * VBW, y: (ev.clientY - r.top) / r.height * VBH };
+  }
+  function zoomAt(vb, factor) {
+    var ns = Math.max(0.6, Math.min(3, view.s * factor));
+    // keep the point under the cursor stable: vb = (p - t)/s  →  t = p - vb*s
+    view.tx = vb.x - ((vb.x - view.tx) / view.s) * ns;
+    view.ty = vb.y - ((vb.y - view.ty) / view.s) * ns;
+    view.s = ns; applyCam();
+  }
+  svg.addEventListener("wheel", function (ev) { ev.preventDefault(); zoomAt(clientToVB(ev), ev.deltaY < 0 ? 1.12 : 1 / 1.12); }, { passive: false });
+  var panning = false, panSX = 0, panSY = 0, panTX = 0, panTY = 0, panMoved = 0;
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.target.closest(".av-node") || ev.target.closest(".av-edge-g")) return; // let element clicks through
+    panning = true; panMoved = 0; panSX = ev.clientX; panSY = ev.clientY; panTX = view.tx; panTY = view.ty;
+    svg.style.cursor = "grabbing"; if (svg.setPointerCapture) svg.setPointerCapture(ev.pointerId);
+  });
+  svg.addEventListener("pointermove", function (ev) {
+    if (!panning) return;
+    var r = svg.getBoundingClientRect(), kx = VBW / r.width, ky = VBH / r.height;
+    var dx = (ev.clientX - panSX) * kx, dy = (ev.clientY - panSY) * ky;
+    panMoved += Math.abs(ev.clientX - panSX) + Math.abs(ev.clientY - panSY);
+    view.tx = panTX + dx; view.ty = panTY + dy; applyCam();
+  });
+  function endPan(ev) {
+    if (panning && panMoved < 5) { if (!flow.active) clearSelection(); }
+    panning = false; svg.style.cursor = "grab";
+  }
+  svg.addEventListener("pointerup", endPan);
+  svg.addEventListener("pointercancel", endPan);
+  svg.style.cursor = "grab";
+
+  /* ----------------------------- CONTROLS ------------------------------- */
+  function btn(id, fn) { var b = document.getElementById(id); if (b) b.addEventListener("click", fn); }
+  function setToggle(id, on) { var b = document.getElementById(id); if (b) b.classList.toggle("on", !!on); }
+  btn("av-zoomin", function () { zoomAt({ x: VBW / 2, y: VBH / 2 }, 1.18); });
+  btn("av-zoomout", function () { zoomAt({ x: VBW / 2, y: VBH / 2 }, 1 / 1.18); });
+  btn("av-reset", function () { view = { s: 1, tx: 0, ty: 0 }; applyCam(); clearSelection(); });
+  btn("av-play", function () { playing = !playing; setToggle("av-play", playing); applyVisibility(); });
+  btn("av-labels", function () { showLabels = !showLabels; setToggle("av-labels", showLabels); applyVisibility(); });
+  setToggle("av-play", true); setToggle("av-labels", true);
+
+  document.querySelectorAll(".av-filter").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll(".av-filter").forEach(function (x) { x.classList.remove("on"); });
+      b.classList.add("on"); activeFilter = b.getAttribute("data-filter"); applyVisibility();
+    });
+  });
+
+  /* ----- discovery / tamper / flow buttons ----- */
+  btn("av-discovery", function () {
+    discoveryOn = !discoveryOn; setToggle("av-discovery", discoveryOn);
+    setCaption(discoveryOn ? "discovery · /.well-known/ucp" : null, discoveryOn ? "Every party serves GET /.well-known/ucp (REST · unsigned · cached ≥60s). Peers resolve MCP endpoints + signing-key JWKs from it before any signed call." : null, "#34d399");
+  });
+  btn("av-tamper", startTamper);
+  btn("av-flow", function () { if (flow.active) exitFlow(); else startFlow(); });
+  btn("av-fprev", function () { goStep(flow.i - 1, false); });
+  btn("av-fnext", function () { goStep(flow.i + 1, false); });
+  btn("av-fplay", function () { flow.playing = !flow.playing; document.getElementById("av-fplay").innerHTML = flow.playing ? "⏸ Pause" : "▶ Play"; });
+  btn("av-fexit", exitFlow);
+
+  /* --------------------------- CAPTION / FLOW --------------------------- */
+  var capEl = document.getElementById("av-caption"), capStep = document.getElementById("av-cap-step"), capText = document.getElementById("av-cap-text");
+  var flowCtrls = document.getElementById("av-flowctrls"), pbar = document.getElementById("av-progress-bar"), fstepEl = document.getElementById("av-fstep");
+  function setCaption(step, text, color) {
+    if (!capEl) return;
+    if (!text) { if (!flow.active) capEl.style.display = "none"; return; }
+    capEl.style.display = "block"; capEl.style.setProperty("--c", color || "#818cf8");
+    capStep.textContent = step || ""; capText.textContent = text;
+  }
+  function moverColor(c) { mover.core.setAttribute("fill", c); mover.halo.setAttribute("fill", c); mover.lblBg.setAttribute("stroke", c); }
+  function setMoverLabel(text, color) {
+    mover.lblTx.textContent = text;
+    var w = text.length * 6 + 20; mover.lblBg.setAttribute("width", w); mover.lblBg.setAttribute("x", -w / 2);
+    if (color) mover.lblBg.setAttribute("stroke", color);
+  }
+  function startFlow() {
+    if (tamper.active) endTamper();
+    flow.active = true; setToggle("av-flow", true);
+    flowCtrls.style.display = "flex"; document.getElementById("av-fplay").innerHTML = "⏸ Pause";
+    flow.playing = true; goStep(0, true);
+  }
+  function exitFlow() {
+    flow.active = false; setToggle("av-flow", false);
+    flowCtrls.style.display = "none"; capEl.style.display = "none";
+    mover.g.setAttribute("visibility", "hidden"); clearSelection();
+  }
+  function goStep(i, autoplay) {
+    if (i < 0) i = 0; if (i >= FLOW.length) { finishFlow(); return; }
+    flow.i = i; flow.t = 0; if (autoplay !== undefined) flow.playing = autoplay ? true : flow.playing;
+    var st = FLOW[i], e = findEdge(st.edge);
+    selKind = "edge"; selId = e.id; applyVisibility(); renderDetail("edge", e.id); syncUI();
+    setCaption("STEP " + (i + 1) + " / " + FLOW.length + "  ·  " + st.tool, st.cap, e.color);
+    setMoverLabel(st.tool + (e.sec.signed ? "  🔒" : ""), e.color); moverColor(e.color);
+    mover.g.setAttribute("visibility", "visible");
+    pbar.style.width = (100 * (i + 1) / FLOW.length) + "%"; fstepEl.textContent = (i + 1) + " / " + FLOW.length;
+  }
+  function finishFlow() {
+    flow.playing = false; document.getElementById("av-fplay").innerHTML = "▶ Play";
+    setCaption("✓ COMPLETE", "Order placed and paid — every hop above was TLS-encrypted, the money-movement hops RFC 9421-signed, and the spend was gated three times (mint · sign · release). Press Exit or replay.", "#34d399");
+    mover.g.setAttribute("visibility", "hidden");
+  }
+
+  /* --------------------------- TAMPER ---------------------------------- */
+  function startTamper() {
+    if (flow.active) exitFlow();
+    tamper.active = true; tamper.t = 0; setToggle("av-tamper", true);
+    var e = findEdge("agent-merchant-ucp");
+    selKind = "edge"; selId = e.id; applyVisibility(); renderDetail("edge", e.id); syncUI();
+    setCaption("⚠ TAMPER TEST", "An attacker alters the request body in flight…", "#f59e0b");
+    setMoverLabel("complete_checkout  🔒", e.color); moverColor(e.color);
+    mover.g.setAttribute("visibility", "visible");
+  }
+  function endTamper() { tamper.active = false; setToggle("av-tamper", false); mover.g.setAttribute("visibility", "hidden"); }
+
+  /* ----------------------------- THEME ---------------------------------- */
+  if (window.MutationObserver) {
+    new MutationObserver(function () {
+      var d = (document.documentElement.dataset.theme === "dark");
+      if (d !== DARK) { DARK = d; mover.lblTx.setAttribute("fill", DARK ? "#f1f5ff" : "#1b2030"); }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+
+  /* --------------------------- ANIMATION LOOP --------------------------- */
+  var visible = true;
+  if (window.IntersectionObserver) new IntersectionObserver(function (e) { visible = e[0].isIntersecting; }, { threshold: 0.01 }).observe(stage);
+  function ptOn(o, l) { return o.path.getPointAtLength(Math.max(0, Math.min(o.len, l))); }
+  var last = performance.now(), tAcc = 0;
+  function tick(now) {
+    requestAnimationFrame(tick);
+    var dt = Math.min((now - last) / 1000, 0.05); last = now;
+    if (!visible) return;
+    if (playing) tAcc += dt;
+
+    // ambient packets
+    EDGES.forEach(function (e) {
+      var o = edgeEls[e.id]; if (o.g.style.display === "none") return;
+      var seg = o.l1 - o.l0;
+      var speed = (e.category === "rest" ? 0.10 : 0.16) * (e.id === selId ? 1.7 : 1);
+      o.packets.forEach(function (pk) {
+        var f = (tAcc * speed + pk.phase) % 1; if (pk.rev) f = 1 - f;
+        var pt = ptOn(o, o.l0 + f * seg);
+        pk.g.setAttribute("transform", "translate(" + pt.x.toFixed(1) + "," + pt.y.toFixed(1) + ")");
+      });
+    });
+
+    // node flash (tamper) — pulse the box stroke red
+    Object.keys(nodeEls).forEach(function (id) {
+      var o = nodeEls[id];
+      if (o.flash > 0) { o.flash -= dt; o.box.setAttribute("stroke", "#ef4444"); if (o.flash <= 0) o.box.setAttribute("stroke", NODES[id].color); }
+    });
+
+    // discovery rings
+    if (discoveryOn) {
+      Object.keys(nodeEls).forEach(function (id, ni) {
+        nodeEls[id].rings.forEach(function (rg, ri) {
+          var u = ((tAcc * 0.5 + ri / 3 + ni * 0.1) % 1);
+          rg.setAttribute("r", (10 + u * 70).toFixed(1));
+          rg.style.opacity = ((DARK ? 0.5 : 0.6) * (1 - u)).toFixed(3);
+        });
+      });
+    } else {
+      Object.keys(nodeEls).forEach(function (id) { nodeEls[id].rings.forEach(function (rg) { rg.style.opacity = 0; }); });
+    }
+
+    // flow courier
+    if (flow.active) {
+      var st = FLOW[flow.i], oe = edgeEls[st.edge];
+      if (flow.playing) {
+        flow.t += dt * 0.6;
+        var pt = ptOn(oe, oe.l0 + Math.min(flow.t, 1) * (oe.l1 - oe.l0));
+        mover.g.setAttribute("transform", "translate(" + pt.x.toFixed(1) + "," + pt.y.toFixed(1) + ")");
+        if (flow.t >= 1.3) goStep(flow.i + 1, true);
+      } else {
+        var pt2 = ptOn(oe, oe.l0 + Math.min(flow.t, 1) * (oe.l1 - oe.l0));
+        mover.g.setAttribute("transform", "translate(" + pt2.x.toFixed(1) + "," + pt2.y.toFixed(1) + ")");
+      }
+    }
+
+    // tamper sequence
+    if (tamper.active) {
+      tamper.t += dt * 0.42;
+      var te = edgeEls["agent-merchant-ucp"];
+      var tp = ptOn(te, te.l0 + Math.min(tamper.t, 1) * (te.l1 - te.l0));
+      mover.g.setAttribute("transform", "translate(" + tp.x.toFixed(1) + "," + tp.y.toFixed(1) + ")");
+      if (tamper.t > 0.5 && tamper.t < 1.05) {
+        moverColor("#ef4444"); setMoverLabel("body altered ✗", "#ef4444");
+        setCaption("⚠ TAMPER TEST", "Bytes changed → the Content-Digest no longer matches the RFC 9421 signature.", "#f59e0b");
+      }
+      if (tamper.t >= 1.05 && tamper.t < 1.12) { nodeEls.merchant.flash = 0.9; }
+      if (tamper.t >= 1.1) {
+        setCaption("✗ REJECTED", "Merchant recomputes the digest, the signature fails to verify → 401 invalid_signature. A replayed or altered request never reaches the tool handler.", "#ef4444");
+        if (tamper.t >= 2.0) { endTamper(); }
+      }
+    }
+  }
+
+  /* ----------------------------- INIT ----------------------------------- */
+  buildPanels();
+  buildOverlays();
+  applyCam();
+  applyVisibility();
+  renderDetail(null);
+  requestAnimationFrame(tick);
+
+  window.__archviz = { selectEdge: selectEdge, selectNode: selectNode, clear: clearSelection, flow: startFlow, tamper: startTamper };
+})();
+</script>
+
+  <details class="av-flat" open>
+    <summary>Alternate flat views — 2D schematic &amp; Mermaid auto-layout<span class="ftag">static reference</span></summary>
 
   <div class="card">
   <svg class="diagram" viewBox="0 0 1000 790" xmlns="http://www.w3.org/2000/svg">
@@ -468,7 +1568,7 @@ pre.mermaid svg{max-width:100%;height:auto}
     <text x="340" y="200" font-size="11" fill="var(--accent)" font-weight="700">UCP · dev.ucp.shopping.* — MCP binding</text>
     <text x="340" y="215" font-size="10" fill="var(--accent)">JSON-RPC 2.0 tools/call · RFC 9421+9530 signed · Idempotency-Key</text>
     <text x="340" y="229" font-size="10" fill="var(--muted)">search/lookup · cart · create/update/complete_checkout · orders · refund/dispute</text>
-    <text x="340" y="243" font-size="10" fill="var(--muted)">carries AP2: intent_mandate + checkout_mandate (SD-JWT+kb) · response @status signed</text>
+    <text x="340" y="243" font-size="10" fill="var(--muted)">carries AP2: checkout_mandate (SD-JWT+kb) · response @status signed</text>
 
     <!-- agent <-> merchant : OAuth -->
     <path d="M280 318 C 420 352, 500 352, 620 332" stroke="var(--muted)" stroke-width="1.7" fill="none" marker-end="url(#arr)"/>
@@ -485,14 +1585,14 @@ pre.mermaid svg{max-width:100%;height:auto}
     <path d="M140 366 L190 520" stroke="var(--violet)" stroke-width="2.2" fill="none" marker-end="url(#arrV)"/>
     <text x="32" y="468" font-size="10.5" fill="var(--violet)" font-weight="700">AP2 wallet ops — MCP binding (signed)</text>
     <text x="32" y="482" font-size="10" fill="var(--violet)">list_payment_methods · mint_instrument (policy!)</text>
-    <text x="32" y="496" font-size="10" fill="var(--violet)">sign_mandate (Intent/Cart/Payment/Checkout)</text>
+    <text x="32" y="496" font-size="10" fill="var(--violet)">sign_mandate (Checkout / Payment · open or closed)</text>
     <text x="32" y="510" font-size="10" fill="var(--violet)">passkey_* · request/check_approval · get_agent_policy</text>
 
     <!-- merchant -> PSP -->
     <path d="M800 380 L800 520" stroke="var(--amber)" stroke-width="2.2" fill="none" marker-end="url(#arrM)"/>
     <text x="812" y="430" font-size="10.5" fill="var(--amber)" font-weight="700">AP2 payment processing — MCP (signed)</text>
     <text x="812" y="444" font-size="10" fill="var(--amber)">lookup_agent (KYA gate) · authorize_payment</text>
-    <text x="812" y="458" font-size="10" fill="var(--amber)">(composite token + intent_mandate) · capture</text>
+    <text x="812" y="458" font-size="10" fill="var(--amber)">(composite token + payment_mandate) · capture</text>
     <text x="812" y="472" font-size="10" fill="var(--amber)">refund_payment · 3-DS requires_challenge</text>
 
     <!-- PSP -> CP -->
@@ -566,6 +1666,7 @@ flowchart TB
     linkStyle 8 stroke:#7c3aed,stroke-width:2px
     </pre>
   </div>
+  </details>
 
   <div class="card" style="margin-bottom:18px">
     <h3 style="margin-top:0">Reading the diagram — compliance per edge</h3>
@@ -606,7 +1707,8 @@ scripts/
 <!-- ================== 4. JOURNEY ================== -->
 <section id="journey">
   <h2><span class="num">4</span>A purchase, step by step</h2>
-  <p class="lede">Click each step to see what actually happens on the wire. Tags show the layer:
+  <p class="lede">Click each step to see what actually happens on the wire — an explanation plus the example
+  <b>request</b> and <b>response</b> payloads. Tags show the layer:
   <span class="tag ucp">UCP</span> commerce, <span class="tag ap2">AP2</span> signed mandate, <span class="tag pki">PKI</span> verification.</p>
   <div class="journey">
     <div class="steps" id="steps"></div>
@@ -645,8 +1747,8 @@ scripts/
   <div class="card">
     <h3 style="margin-top:0">1 · Full purchase (happy path) — UCP checkout + AP2 mandate chain</h3>
     <p style="font-size:13.5px;color:var(--muted)">The backbone flow. Note the three independent verification points:
-    the merchant verifies the checkout mandate + intent ceiling, the PSP re-verifies everything from scratch
-    (signature, scope, KYA, velocity, intent, token-bound policy), and the CP enforces the spend policy before any
+    the merchant verifies the checkout mandate, the PSP re-verifies everything from scratch
+    (signature, scope, KYA, velocity, token-bound policy), and the CP enforces the spend policy before any
     credential exists at all.</p>
     <pre class="mermaid">
 sequenceDiagram
@@ -659,24 +1761,23 @@ sequenceDiagram
     U->>A: "ANC headphones under $300, 2-day"
     A->>M: GET /.well-known/ucp (REST, all 4 tenants)
     Note over A,M: capability negotiation (intersection)
-    A->>CP: sign_mandate(IntentMandate) — MCP, signed
-    A->>M: tools/call search_catalog — UCP MCP
+    A->>M: tools/call search_catalog (within your constraints) — UCP MCP
     U->>A: picks product + merchant
     A->>M: create_checkout → checkout + ap2.merchant_authorization (detached JWS over JCS)
     A->>A: verify merchant_authorization vs published JWK
-    A->>CP: sign_mandate(CartMandate)
     U->>A: Pay (GPay sheet)
     A->>CP: get_agent_policy → rail selection (card / RTP)
     A->>CP: mint_instrument — POLICY GATE №1 (cap·budget·allowlist·autonomy)
     CP-->>A: single-use token + policy snapshot bound in
+    Note over U,CP: Trusted Surface (CP-hosted) — consent + signing
     A->>CP: sign_mandate(PaymentMandate) — POLICY GATE №2
     U->>CP: Touch ID (WebAuthn/SPC assertion over SHA-256(JCS(checkout)))
     A->>CP: sign_mandate(CheckoutMandate) → SD-JWT+kb (aud=merchant, nonce=checkout)
-    A->>M: complete_checkout(composite token, checkout_mandate, intent_mandate)
+    A->>M: complete_checkout(composite token, checkout_mandate)
     M->>PSP: lookup_agent — KYA gate (suspension / reputation)
-    M->>M: verify SD-JWT+kb · own JWS · terms · intent ceiling
-    M->>PSP: authorize_payment(composite token + intent_mandate)
-    PSP->>PSP: verify mandate sig+scope · KYA · velocity · intent
+    M->>M: verify SD-JWT+kb · own JWS · terms match
+    M->>PSP: authorize_payment(composite token · payment_mandate)
+    PSP->>PSP: verify mandate sig+scope · KYA · velocity
     PSP->>CP: release_credentials(token) — single-use
     CP-->>PSP: credentials + POLICY SNAPSHOT — GATE №3 (PSP re-check)
     PSP-->>M: authorized (rail recorded)
@@ -980,7 +2081,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <tr><td><code>create_checkout</code></td><td>Opens a priced, signed checkout session: computes totals (subtotal / fulfillment / discounts &lt; 0 / tax / total — exactly one subtotal + one total), attaches fulfillment options and the <code>ucp</code> envelope advertising both payment handlers (<code>com.google.pay</code>, <code>com.paystream.rtp</code>), and seals <code>ap2.merchant_authorization</code> — a detached JWS over JCS(checkout − ap2).</td><td><code>{line_items[], buyer, fulfillment…}</code> → checkout (<code>incomplete</code> or <code>ready_for_complete</code>). Every response is re-signed.</td></tr>
       <tr><td><code>get_checkout</code></td><td>Read the live session — always returns the current re-signed state.</td><td><code>{id}</code> → checkout.</td></tr>
       <tr><td><code>update_checkout</code></td><td>Mutates the session: quantities, shipping address, fulfillment option (express re-prices), discount codes. Totals recomputed and the checkout <b>re-signed</b>; advisory <code>messages[]</code> (e.g. invalid promo) are merged <i>before</i> signing so the signature always covers what the buyer sees.</td><td><code>{id, line_items?/buyer?/fulfillment?/discounts?}</code> → re-signed checkout. Scenarios: <code>express</code>, <code>promo</code>.</td></tr>
-      <tr><td><code>complete_checkout</code> ⚿</td><td>The verification gauntlet, in order: ① KYA — <code>lookup_agent</code> at the PSP (suspended / low-reputation ⇒ <code>agent_untrusted</code>); ② verify the SD-JWT+kb checkout mandate (CP issuer signature, key-binding to the user device key, <code>aud</code>=this tenant, <code>nonce</code>=checkout id, expiry); ③ verify its own <code>merchant_authorization</code> inside the embedded checkout (nested binding — tamper detection); ④ terms match the live session (id + total); ⑤ verify the <b>intent mandate</b> (signature + basket ≤ signed ceiling) and forward it; ⑥ validate the instrument's <code>handler_id</code> was advertised; ⑦ PSP authorize + capture; ⑧ create the Order + dispute-ready evidence. 3-DS ⇒ <code>requires_escalation</code> + <code>continue_url</code>; retry accepts <code>ap2.challenge_attestation</code>. The completion response itself is RFC 9421-signed (<code>@status</code>).</td><td><code>{id, checkout:{payment.instruments[], signals, ap2:{checkout_mandate, intent_mandate?, challenge_attestation?}}}</code> → completed checkout + <code>order{id, permalink_url}</code>. Errors: <code>mandate_required/expired/scope_mismatch</code>, <code>agent_untrusted</code>, <code>payment_declined</code>…</td></tr>
+      <tr><td><code>complete_checkout</code> ⚿</td><td>The verification gauntlet, in order: ① KYA — <code>lookup_agent</code> at the PSP (suspended / low-reputation ⇒ <code>agent_untrusted</code>); ② verify the SD-JWT+kb checkout mandate (CP issuer signature, key-binding to the user device key, <code>aud</code>=this tenant, <code>nonce</code>=checkout id, expiry); ③ verify its own <code>merchant_authorization</code> inside the embedded checkout (nested binding — tamper detection); ④ terms match the live session (id, currency, total + full line-item set); ⑤ validate the instrument's <code>handler_id</code> was advertised; ⑥ PSP authorize + capture; ⑦ create the Order + dispute-ready evidence. 3-DS ⇒ <code>requires_escalation</code> + <code>continue_url</code>; retry accepts <code>ap2.challenge_attestation</code>. The completion response itself is RFC 9421-signed (<code>@status</code>).</td><td><code>{id, checkout:{payment.instruments[], signals, ap2:{checkout_mandate, challenge_attestation?}}}</code> → completed checkout + <code>order{id, permalink_url}</code>. Errors: <code>mandate_required/expired/scope_mismatch</code>, <code>agent_untrusted</code>, <code>payment_declined</code>…</td></tr>
       <tr><td><code>cancel_checkout</code></td><td>Abandons a non-completed session (status ⇒ <code>canceled</code>).</td><td><code>{id}</code> → canceled checkout.</td></tr>
       <tr><td><code>get_order</code></td><td>Reads the Order object: chained line items, fulfillment <i>expectations</i> (promised window) and carrier <i>events</i> — what the post-purchase monitor compares to detect late deliveries.</td><td><code>{id}</code> → <code>{order}</code>. Scenario: <code>late_delivery</code>.</td></tr>
       <tr><td><code>list_orders</code></td><td><b>Identity Linking</b>: returns ONLY the linked user's orders, gated by an OAuth 2.0 access token with scope <code>dev.ucp.shopping.order:read</code> (RFC 8414 discovery + PKCE). A leaked token reads history; it can never spend.</td><td><code>{access_token}</code> → user-scoped orders. Scenario: <code>identity</code>.</td></tr>
@@ -993,7 +2094,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <tr><th style="width:170px">Tool</th><th>Purpose &amp; behavior</th><th style="width:34%">Inputs → returns · notes</th></tr>
       <tr><td><code>list_payment_methods</code></td><td>The user's agentic-ready instruments — display data only (network, last4, rail); PANs never leave the wallet. Includes the deterministic demo behaviors (3-DS test card, declining card) and the RTP checking account.</td><td><code>{user}</code> → <code>{payment_methods[]}</code>.</td></tr>
       <tr><td><code>mint_instrument</code></td><td><b>Policy gate №1.</b> Evaluates the spend policy (per-tx cap, budget, merchant allowlist, validity window, autonomy — with the approval-inbox waiver) and only then mints a <b>single-use</b> token bound to the checkout context. The policy snapshot and rail travel <i>inside</i> the token, like a network-enforced scope.</td><td><code>{method_id?, context:{checkout_id, merchant_id, amount, human_present}}</code> → <code>{instrument(network_token|rtp_token), handler, policy}</code>. Errors: <code>policy_*</code> (403).</td></tr>
-      <tr><td><code>sign_mandate</code></td><td>Signs the AP2 mandates after trusted-surface approval. Intent/Cart/Payment: compact JWS by the <b>user device key</b> (Payment = <b>policy gate №2</b>). Checkout: a real <b>SD-JWT+kb</b> — issued by the CP service key, key-bound to the device key (<code>typ kb+jwt</code>, <code>aud</code>=merchant profile, <code>nonce</code>=checkout id), selective disclosure (reveal <code>sub</code>, withhold <code>buyer_email</code>). If a passkey is enrolled, signing is gated on a verified WebAuthn/SPC assertion whose challenge = SHA-256(JCS(checkout − ap2)) with UV=1 — real Touch ID over the exact terms.</td><td><code>{kind, payload, webauthn?}</code> → <code>{jws, kid, format, approved_via, passkey_evidence?}</code>. Errors: <code>policy_*</code>, <code>user_verification_required/failed</code>.</td></tr>
+      <tr><td><code>sign_mandate</code></td><td>Signs the AP2 mandates after trusted-surface approval. Payment Mandate: SD-JWT+kb bound to the signed checkout (<b>policy gate №2</b>). Checkout Mandate: a real <b>SD-JWT+kb</b> — issued by the CP service key, key-bound to the device key (<code>typ kb+jwt</code>, <code>aud</code>=merchant profile, <code>nonce</code>=checkout id), embedding the full checkout (so the user's signature covers the merchant_authorization), with selective disclosure (reveal <code>sub</code>, withhold <code>buyer_email</code>). For autonomous (human-not-present) sessions the user instead signs <b>Open</b> Checkout/Payment Mandates carrying constraints. If a passkey is enrolled, signing is gated on a verified WebAuthn/SPC assertion whose challenge = SHA-256(JCS(checkout − ap2)) with UV=1 — real Touch ID over the exact terms.</td><td><code>{kind, payload, webauthn?}</code> → <code>{jws, kid, format, approved_via, passkey_evidence?}</code>. Errors: <code>policy_*</code>, <code>user_verification_required/failed</code>.</td></tr>
       <tr><td><code>release_credentials</code></td><td>PSP-only (AP2 steps 26–27): exchanges the single-use token for payment credentials. Enforces single-use (≤2 releases — exactly one 3-DS retry), honors user revocation (<code>token_revoked</code>), and returns the token-bound <b>policy snapshot + rail</b> for the PSP's independent re-check. Budget is accounted here — on first release, when credentials actually move.</td><td><code>{token}</code> → <code>{credentials, behavior, context, policy, rail}</code>. Errors: <code>token_not_found/replayed/revoked</code>.</td></tr>
       <tr><td><code>resolve_challenge</code></td><td>3-D Secure: issues the attestation after the user completes the bank step-up (simulated page at the PSP's <code>continue_url</code>).</td><td><code>{challenge_id}</code> → <code>{attestation}</code>. Scenario: <code>threeds</code>.</td></tr>
       <tr><td><code>get_agent_policy</code></td><td>Read-only policy view — the agent uses it for rail preview and the autonomy pre-check before attempting an autonomous purchase.</td><td><code>{}</code> → <code>{policy}</code> (caps, budget+spent, allowlist, autonomy, rail, window).</td></tr>
@@ -1007,7 +2108,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
     <h4 style="margin:18px 0 6px">🏦 Payment Provider — called by Merchants (and the Agent for KYA) · AP2 processor role</h4>
     <table>
       <tr><th style="width:170px">Tool</th><th>Purpose &amp; behavior</th><th style="width:34%">Inputs → returns · notes</th></tr>
-      <tr><td><code>authorize_payment</code> ⚿</td><td>Independent re-verification of everything, trusting no upstream party: ① PaymentMandate signature against the CP's published JWKs; ② <b>KYA</b> — the mandate's <code>agent</code> must not be suspended / reputation &lt; 40; ③ <b>velocity</b> — rolling per-agent rate limit (429 <code>velocity_exceeded</code>); ④ scope — expiry, amount, payee, checkout binding, cart linkage; ⑤ optional <b>intent mandate</b> re-validation (signature + budget ceiling); ⑥ <code>release_credentials</code> at the CP; ⑦ <b>policy gate №3</b> — re-check of the token-bound spend snapshot; ⑧ issuer simulation → authorized / <code>requires_challenge</code> (3-DS, with <code>continue_url</code>) / declined. Records the settlement <b>rail</b> and reputation events.</td><td><code>{payment:{merchant…, amount, credential(composite token), intent_mandate?, challenge_attestation?}, signals}</code> → <code>{transaction_id, status, rail, verification{…}}</code>.</td></tr>
+      <tr><td><code>authorize_payment</code> ⚿</td><td>Independent re-verification of everything, trusting no upstream party: ① PaymentMandate signature against the CP's published JWKs; ② <b>KYA</b> — the mandate's <code>agent</code> must not be suspended / reputation &lt; 40; ③ <b>velocity</b> — rolling per-agent rate limit (429 <code>velocity_exceeded</code>); ④ scope — expiry, amount, payee, checkout binding (<code>transaction_id == checkout hash</code>); ⑤ for autonomous sessions, re-check the closed mandate satisfies the user's <b>open mandate</b> constraints (amount range / budget); ⑥ <code>release_credentials</code> at the CP; ⑦ <b>policy gate №3</b> — re-check of the token-bound spend snapshot; ⑧ issuer simulation → authorized / <code>requires_challenge</code> (3-DS, with <code>continue_url</code>) / declined. Records the settlement <b>rail</b> and reputation events.</td><td><code>{payment:{merchant…, amount, credential(composite token), challenge_attestation?}, signals}</code> → <code>{transaction_id, status, rail, verification{…}}</code>.</td></tr>
       <tr><td><code>capture_payment</code> ⚿</td><td>Settles an authorized transaction (auth → capture); clean settlement nudges the agent's reputation up (+1).</td><td><code>{transaction_id}</code> → <code>{status: captured, rail}</code>. Error: <code>invalid_state</code> (409).</td></tr>
       <tr><td><code>refund_payment</code> ⚿</td><td>Issuer credit, full or partial, with per-refund records; transitions to <code>refunded</code> / <code>partially_refunded</code>. Also reachable from the PSP dashboard drill-in.</td><td><code>{transaction_id, amount?, reason}</code> → <code>{refund_id, total_refunded, status}</code>.</td></tr>
       <tr><td><code>get_payment</code></td><td>Transaction lookup — status, rail, agent, verification log, refunds.</td><td><code>{transaction_id}</code> → transaction.</td></tr>
@@ -1068,7 +2169,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <tr><td><code>dev.ucp.shopping.catalog.search</code> / <code>.lookup</code></td><td>Federated <code>search_catalog</code> across merchants; <code>get_product</code> / <code>lookup_catalog</code> for full detail (official <code>product.json</code> shapes).</td></tr>
       <tr><td><code>dev.ucp.shopping.cart</code></td><td>Basket building before checkout intent — <code>create/get/update/cancel_cart</code>.</td></tr>
       <tr><td><code>dev.ucp.shopping.checkout</code></td><td>The session lifecycle (left) — every response merchant-signed.</td></tr>
-      <tr><td><code>dev.ucp.shopping.fulfillment</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>Standard vs express shipping options; choosing express changes totals and re-issues the merchant signature + Cart Mandate.</td></tr>
+      <tr><td><code>dev.ucp.shopping.fulfillment</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>Standard vs express shipping options; choosing express changes totals and re-issues the merchant signature (merchant_authorization).</td></tr>
       <tr><td><code>dev.ucp.shopping.discount</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>Promo codes (<code>SHOPPY10</code>, <code>SAVE20</code>) → negative discount line; invalid code → <code>warning</code> message covered by the signature.</td></tr>
       <tr><td><code>dev.ucp.shopping.ap2_mandate</code> <span class="tag" style="background:var(--accent-soft);color:var(--accent)">ext</span></td><td>The security lock — §8–9.</td></tr>
       <tr><td><code>dev.ucp.shopping.order</code></td><td>Signed order webhooks (<code>order.shipped</code>, <code>order.refunded</code>) + post-order <code>refund_order</code> / <code>file_dispute</code>.</td></tr>
@@ -1077,6 +2178,19 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
     <div class="callout"><b>Response signing.</b> Beyond requests, the merchant signs the <code>complete_checkout</code> <i>response</i>
     (RFC 9421, <code>@status</code> component) and the platform verifies it — so the order receipt is non-repudiable
     (RECOMMENDED by the spec).</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Capability negotiation (the full handshake)</h3>
+    <p style="font-size:14px">Per the spec's <i>Negotiation Protocol</i>, platform and business agree on a capability set per session:</p>
+    <ol style="font-size:13.5px;margin:0 0 6px 18px">
+      <li><b>Profile advertisement</b> — every request carries <code>meta["ucp-agent"].profile</code> + the <code>UCP-Agent</code> header.</li>
+      <li><b>Discovery</b> — the platform fetches each business <code>/.well-known/ucp</code> (cached with a 60s TTL floor, per the spec, regardless of <code>Cache-Control</code>).</li>
+      <li><b>Namespace validation</b> — each capability's <code>spec</code> &amp; <code>schema</code> URL origin MUST match its reverse-domain authority (<code>dev.ucp.*</code> → <code>https://ucp.dev</code>); offending capabilities are rejected before negotiation.</li>
+      <li><b>Intersection</b> — name match → <b>highest mutual version</b> → transitive orphan-extension pruning (single- and multi-parent). <code>dev.ucp.shopping.ap2_mandate</code> is always in the result, so every session is <b>security-locked</b>.</li>
+      <li><b>Schema resolution</b> — fetch base + active extension schemas, compose via <code>allOf</code>, validate payloads (§13).</li>
+    </ol>
+    <p style="font-size:13px;color:var(--muted)">The <b>business side</b> recomputes the same intersection on each request: the merchant validates the platform profile's shape + version and exposes the active set; an empty intersection → <code>capabilities_incompatible</code> (a 200 business outcome with a <code>continue_url</code>). Inter-service calls (Merchant→PSP, PSP→CP) are peer calls, so negotiation is enforced only on the platform-facing merchant endpoint. The agent's Protocol Trace shows the <b>Namespace Validation</b>, <b>Capability Negotiation</b> and <b>Schema Resolution</b> steps live.</p>
   </div>
 
   <details><summary>Amounts, addresses and other schema conventions (click to expand)</summary><div class="body">
@@ -1166,53 +2280,83 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
 <!-- ================== 9. AP2 ================== -->
 <section id="ap2">
   <h2><span class="num">10</span>Security II — AP2 &amp; the mandate chain</h2>
-  <p class="lede">HTTP signatures authenticate <i>services</i>. Mandates authenticate <i>the human</i>. AP2's verifiable
-  credentials prove — durably, for disputes months later — that the user authorized exactly this purchase.</p>
+  <p class="lede">HTTP signatures authenticate <i>services</i>. Mandates authenticate <i>the human</i>. Per AP2's principle of
+  <b>verifiable intent, not inferred action</b> (overview §2.3), trust is never based on a language model's probabilistic
+  output — it is anchored to deterministic, non-repudiable proof of intent from <b>all parties</b>: the user signs the
+  Checkout + Payment Mandates, the merchant signs the Checkout. These credentials prove — durably, for disputes months
+  later — that the user authorized exactly this purchase, and defend against agent “hallucination” or misinterpretation.</p>
 
   <div class="card">
-    <h3 style="margin-top:0">Four mandates, one chain</h3>
+    <h3 style="margin-top:0">Two core journeys (overview §4)</h3>
+    <div class="grid2">
+      <div class="card" style="margin:0;border-top:4px solid var(--accent)">
+        <b>§4.1 Human Present</b> <span class="tag">direct</span>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0">The user is present to approve the <b>closed</b> Checkout + Payment Mandates directly.</p>
+        <ol style="font-size:12.5px;color:var(--muted);margin:8px 0 0;padding-left:18px;line-height:1.55">
+          <li><b>Setup</b> — the user connects the agent to a Credential Provider.</li>
+          <li><b>Discovery &amp; negotiation</b> — the agent assembles a cart across merchants.</li>
+          <li><b>Merchant validates cart</b> — the merchant <b>signs the Checkout</b> it will fulfill.</li>
+          <li><b>Provide payment methods</b> — the agent selects an instrument option from the CP.</li>
+          <li><b>Show cart</b> — the agent presents the final cart on a <b>Trusted Surface</b>.</li>
+          <li><b>Sign &amp; pay</b> — the user's biometric approval creates the signed <b>Checkout Mandate</b> (+ Payment Mandate, linked by the checkout hash).</li>
+          <li><b>Payment execution → issuer → (challenge) → authorize</b> — Checkout + Payment receipts returned.</li>
+        </ol>
+      </div>
+      <div class="card" style="margin:0;border-top:4px solid var(--violet)">
+        <b>§4.2 Human Not Present</b> <span class="tag">autonomous</span>
+        <p style="font-size:13px;color:var(--muted);margin:6px 0 0">The user approves <b>open</b> mandates up front; the agent then acts alone, presenting agent-signed <b>closed</b> mandates.</p>
+        <ol style="font-size:12.5px;color:var(--muted);margin:8px 0 0;padding-left:18px;line-height:1.55">
+          <li><b>Phase 1a (present)</b> — the agent repeats the task back; the user authenticates (biometric) and signs the <b>Open</b> Checkout + Payment Mandates (the conditions), each carrying the agent key as <code>cnf</code>. The user leaves.</li>
+          <li><b>Phase 1b (not present)</b> — the agent shops alone and opens a merchant-signed Checkout that meets the conditions.</li>
+          <li><b>Phase 2 (not present)</b> — the agent signs the <b>Closed</b> Checkout + Payment Mandates with its <i>own</i> key; <code>sd_hash</code> binds each closed mandate to its open one. Merchant + PSP verify the closed mandates satisfy the open constraints.</li>
+        </ol>
+        <p style="font-size:12px;color:var(--muted);margin:8px 0 0">Fallback: the Merchant (or CP) may return an <code>unresolved_constraint</code> error to pull the user back in-session — turning a human-not-present flow into a human-present one.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Two user mandates, one chain (AP2 v0.2)</h3>
     <svg class="diagram" viewBox="0 0 960 400">
       <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker></defs>
-      <rect x="20" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
-      <text x="127" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">① Intent Mandate</text>
-      <text x="127" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">“ANC headphones, ≤ $300, 2-day”</text>
-      <text x="127" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">the agent's authorization boundary</text>
-      <text x="127" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">JWS · user device key</text>
-      <rect x="285" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
-      <text x="392" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">② Cart Mandate</text>
-      <text x="392" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">exact items + total ($329.13)</text>
-      <text x="392" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">EMBEDS merchant_authorization ↓</text>
-      <text x="392" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">JWS · user + merchant seals</text>
-      <rect x="550" y="30" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
-      <text x="657" y="58" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">③ Checkout Mandate</text>
-      <text x="657" y="78" text-anchor="middle" font-size="10.5" fill="var(--muted)">ap2.checkout_mandate (real SD-JWT+kb)</text>
-      <text x="657" y="96" text-anchor="middle" font-size="10.5" fill="var(--muted)">embeds the FULL signed checkout</text>
-      <text x="657" y="121" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">required at complete_checkout</text>
-      <rect x="20" y="250" width="215" height="110" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
-      <text x="127" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">④ Payment Mandate</text>
-      <text x="127" y="298" text-anchor="middle" font-size="10.5" fill="var(--muted)">amount + payee + checkout binding</text>
-      <text x="127" y="316" text-anchor="middle" font-size="10.5" fill="var(--muted)">travels INSIDE the composite token</text>
-      <text x="127" y="341" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">verified by the PSP</text>
-      <rect x="285" y="250" width="215" height="110" rx="13" fill="var(--accent-soft)" stroke="var(--teal)" stroke-width="2"/>
-      <text x="392" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">merchant_authorization</text>
-      <text x="392" y="298" text-anchor="middle" font-size="10.5" fill="var(--muted)">detached JWS (h..sig) over</text>
-      <text x="392" y="316" text-anchor="middle" font-size="10.5" fill="var(--muted)">JCS(checkout − ap2)</text>
-      <text x="392" y="341" text-anchor="middle" font-size="10" fill="var(--teal)" font-weight="700">merchant key · proves the terms</text>
-      <rect x="550" y="250" width="390" height="110" rx="13" fill="var(--card)" stroke="var(--line)"/>
-      <text x="745" y="278" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">Nested binding (why it's tamper-proof)</text>
-      <text x="745" y="300" text-anchor="middle" font-size="10.5" fill="var(--muted)">user signature ⊃ checkout ⊃ merchant signature ⊃ terms</text>
-      <text x="745" y="320" text-anchor="middle" font-size="10.5" fill="var(--muted)">change ANY digit of the cart and BOTH seals break —</text>
-      <text x="745" y="338" text-anchor="middle" font-size="10.5" fill="var(--muted)">neither party can later claim different terms</text>
+      <!-- top row: merchant signs → user Checkout Mandate → user Payment Mandate -->
+      <rect x="20" y="40" width="280" height="120" rx="13" fill="var(--accent-soft)" stroke="var(--teal)" stroke-width="2"/>
+      <text x="160" y="68" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">merchant_authorization</text>
+      <text x="160" y="90" text-anchor="middle" font-size="10.5" fill="var(--muted)">detached JWS (h..sig) over</text>
+      <text x="160" y="107" text-anchor="middle" font-size="10.5" fill="var(--muted)">JCS(checkout − ap2) · exact terms + total</text>
+      <text x="160" y="138" text-anchor="middle" font-size="10" fill="var(--teal)" font-weight="700">merchant key · created at create_checkout</text>
+      <rect x="340" y="40" width="280" height="120" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="480" y="68" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">① Checkout Mandate</text>
+      <text x="480" y="90" text-anchor="middle" font-size="10.5" fill="var(--muted)">vct mandate.checkout.1 · SD-JWT+kb</text>
+      <text x="480" y="107" text-anchor="middle" font-size="10.5" fill="var(--muted)">EMBEDS the full signed checkout</text>
+      <text x="480" y="138" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">user device key (holder) · at complete_checkout</text>
+      <rect x="660" y="40" width="280" height="120" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+      <text x="800" y="68" text-anchor="middle" font-size="13.5" font-weight="700" fill="var(--ink)">② Payment Mandate</text>
+      <text x="800" y="90" text-anchor="middle" font-size="10.5" fill="var(--muted)">vct mandate.payment.1 · SD-JWT+kb</text>
+      <text x="800" y="107" text-anchor="middle" font-size="10.5" fill="var(--muted)">payment_amount · payee · instrument</text>
+      <text x="800" y="124" text-anchor="middle" font-size="10.5" fill="var(--muted)">transaction_id = checkout hash</text>
+      <text x="800" y="146" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">user device key · verified by the PSP</text>
+      <!-- bottom row: nested binding + autonomous note -->
+      <rect x="20" y="220" width="600" height="140" rx="13" fill="var(--card)" stroke="var(--line)"/>
+      <text x="320" y="248" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">Nested binding (why it's tamper-proof)</text>
+      <text x="320" y="274" text-anchor="middle" font-size="10.5" fill="var(--muted)">user signature ⊃ checkout ⊃ merchant signature ⊃ terms</text>
+      <text x="320" y="296" text-anchor="middle" font-size="10.5" fill="var(--muted)">change ANY digit of the cart and BOTH seals break —</text>
+      <text x="320" y="314" text-anchor="middle" font-size="10.5" fill="var(--muted)">neither party can later claim different terms</text>
+      <text x="320" y="340" text-anchor="middle" font-size="10.5" fill="var(--muted)">the merchant-signed checkout IS the authenticated cart — no separate cart credential</text>
+      <rect x="640" y="220" width="300" height="140" rx="13" fill="var(--card)" stroke="var(--violet)" stroke-dasharray="5 4"/>
+      <text x="790" y="248" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">Autonomous (human-not-present)</text>
+      <text x="790" y="274" text-anchor="middle" font-size="10.5" fill="var(--muted)">the user signs OPEN Checkout + Payment</text>
+      <text x="790" y="291" text-anchor="middle" font-size="10.5" fill="var(--muted)">Mandates carrying constraints (cnf = agent key);</text>
+      <text x="790" y="308" text-anchor="middle" font-size="10.5" fill="var(--muted)">the agent later signs the CLOSED mandates,</text>
+      <text x="790" y="325" text-anchor="middle" font-size="10.5" fill="var(--muted)">verified to satisfy the open constraints.</text>
+      <text x="790" y="349" text-anchor="middle" font-size="10" fill="var(--violet)" font-weight="700">the user's signed spend boundary for autonomy</text>
       <g stroke="var(--violet)" stroke-width="1.8" fill="none">
-        <path d="M235 85 L285 85" marker-end="url(#a4)"/>
-        <path d="M500 85 L550 85" marker-end="url(#a4)"/>
-        <path d="M127 140 L127 250" marker-end="url(#a4)"/>
-        <path d="M392 250 L392 140" marker-end="url(#a4)"/>
+        <path d="M300 100 L340 100" marker-end="url(#a4)"/>
+        <path d="M620 100 L660 100" marker-end="url(#a4)"/>
+        <path d="M480 160 L480 220" marker-end="url(#a4)"/>
       </g>
-      <text x="243" y="75" font-size="9.5" fill="var(--violet)">derived_from</text>
-      <text x="505" y="75" font-size="9.5" fill="var(--violet)">embeds</text>
-      <text x="134" y="200" font-size="9.5" fill="var(--violet)">links cart_mandate</text>
-      <text x="398" y="200" font-size="9.5" fill="var(--violet)">embedded in cart + checkout</text>
+      <text x="305" y="92" font-size="9.5" fill="var(--violet)">embedded in</text>
+      <text x="625" y="92" font-size="9.5" fill="var(--violet)">binds via tx_id</text>
     </svg>
   </div>
 
@@ -1221,7 +2365,9 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <table>
         <tr><th>Artifact</th><th>Signer / key</th><th>Verified by</th></tr>
         <tr><td><code>merchant_authorization</code></td><td>Merchant tenant key</td><td>Agent (before showing the user anything), merchant itself at complete</td></tr>
-        <tr><td>Intent / Cart / Payment / Checkout mandates</td><td><b>User device key</b>, held at the Credentials Provider, released only after (simulated) biometric approval on a trusted surface</td><td>Merchant (checkout mandate), PSP (payment mandate)</td></tr>
+        <tr><td>Checkout &amp; Payment mandates (SD-JWT+kb)</td><td>Issued by the <b>CP service key</b>, <b>key-bound to the user device key</b> (holder), released only after (simulated) biometric approval on a trusted surface</td><td>Merchant (checkout mandate), PSP (payment mandate)</td></tr>
+        <tr><td>Open Checkout / Payment mandates (autonomous)</td><td><b>User device key</b> (holder), <code>cnf</code> = agent key</td><td>Merchant + PSP — closed mandate must satisfy the open constraints</td></tr>
+        <tr><td>AP2 receipts (Checkout / Payment)</td><td>Merchant key / PSP key</td><td>Agent + stored as dispute evidence</td></tr>
         <tr><td>HTTP requests &amp; webhooks</td><td>Each service's key</td><td>Every recipient, every time</td></tr>
       </table>
       <p style="font-size:13px;color:var(--muted)">Key discovery is uniform: all public keys are JWKs in profile
@@ -1254,13 +2400,37 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0">The payment mandate is an SD-JWT+kb too (<code>mandate.payment.1</code>)</h3>
+    <p style="font-size:14px">The <code>payment_mandate</code> inside the composite token is a proper AP2 verifiable credential — issued by the
+    Credentials Provider, <b>key-bound to the user device key</b>, carrying the canonical AP2 fields:</p>
+    <div class="kv">
+      <span class="k">vct</span><span><code>mandate.payment.1</code> — the verifiable-credential type, asserted exactly by the PSP.</span>
+      <span class="k">transaction_id</span><span>base64url <b>SHA-256 of the merchant-signed checkout</b> (<code>JCS(checkout − ap2)</code>). The merchant forwards the same hash and the PSP asserts <code>transaction_id == checkout_hash</code> — so the payment is bound to the exact signed terms, not just a session id.</span>
+      <span class="k">payment_amount / payee / payment_instrument</span><span>AP2 <code>Amount</code> (minor units), <code>Merchant</code> object, and <code>PaymentInstrument</code> (the instrument is selectively disclosable).</span>
+      <span class="k">key binding</span><span><code>aud</code> = the merchant profile (payee), <code>nonce</code> = the checkout id → can't be replayed at another merchant or checkout.</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">The PSP verifies it with the same SD-JWT+kb machinery as the checkout mandate (<code>sdJwtVerify</code>), then re-checks vct, transaction_id, amount, payee and expiry before pulling credentials.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Signed receipts close the loop</h3>
+    <p style="font-size:14px">On success each verifier returns a <b>signed AP2 receipt</b> (compact JWS, <code>typ=ap2-receipt+jwt</code>), so both
+    sides hold non-repudiable proof of the outcome:</p>
+    <div class="kv">
+      <span class="k">Checkout Receipt</span><span>Issued by the <b>merchant</b> at <code>complete_checkout</code>: <code>{status, iss, iat, reference, order_id}</code>, where <code>reference</code> = hash of the closed checkout mandate.</span>
+      <span class="k">Payment Receipt</span><span>Issued by the <b>PSP</b> on authorize: <code>{status, iss, iat, reference, payment_id, psp_confirmation_id, network_confirmation_id}</code>, where <code>reference</code> = hash of the closed payment mandate.</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Both ride back on the completed checkout's <code>ap2</code> object (next to <code>merchant_authorization</code>), are stored in the order's evidence bundle, and surface in the agent's Protocol Trace as a dedicated <b>AP2 Receipts</b> card.</p>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0">Failure &amp; recovery paths (not just the happy case)</h3>
     <table>
       <tr><th>Path</th><th>How it plays out</th></tr>
       <tr><td>🔐 3-D Secure step-up</td><td>The PSP returns <code>requires_challenge</code>; the checkout goes <code>requires_escalation</code> with a <code>continue_url</code>. The user resolves the challenge on the CP's trusted surface (<code>resolve_challenge</code> → attestation), and the agent retries <code>complete_checkout</code> with the attestation — which now succeeds.</td></tr>
       <tr><td>❌ Hard decline</td><td>The issuer declines; the merchant returns a <code>payment_declined</code> business outcome with a <code>continue_url</code> web fallback. (Driven by the chosen test card.)</td></tr>
       <tr><td>↩️ Refund</td><td><code>refund_order</code> → PSP <code>refund_payment</code> → an <code>adjustments</code> entry on the order + a signed <code>order.refunded</code> webhook. Supports partial refunds.</td></tr>
-      <tr><td>⚖️ Dispute</td><td><code>file_dispute</code> attaches the user-signed mandate chain (cart + checkout mandates + verification log) as the adjudicator's cryptographic evidence — exactly the AP2 dispute model.</td></tr>
+      <tr><td>⚖️ Dispute</td><td><code>file_dispute</code> attaches the user-signed mandate chain (cart + checkout + payment mandates), the merchant + PSP <b>signed receipts</b>, and the verification log as the adjudicator's cryptographic evidence — exactly the AP2 dispute model.</td></tr>
     </table>
   </div>
 
@@ -1281,11 +2451,11 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
   <details><summary>The complete verification gauntlet at <code>complete_checkout</code></summary><div class="body">
     <div class="kv">
       <span class="k">merchant: mandate present?</span><span>AP2 negotiated ⇒ missing <code>ap2.checkout_mandate</code> → <code>mandate_required</code>. The session cannot downgrade to an unprotected flow (“security-locked”).</span>
-      <span class="k">merchant: SD-JWT+kb verify</span><span>Issuer signature (CP key from its profile), key-binding signature (user device key), <code>aud</code>/<code>nonce</code>/<code>sd_hash</code> and expiry → <code>mandate_invalid_signature</code> / <code>mandate_expired</code> / <code>agent_missing_key</code> / <code>mandate_scope_mismatch</code>.</span>
+      <span class="k">merchant: SD-JWT+kb verify</span><span>Issuer signature (CP key from its profile), key-binding signature (user device key), the <code>vct</code> (must equal <code>mandate.checkout.1</code>), <code>aud</code>/<code>nonce</code>/<code>sd_hash</code> and expiry → <code>mandate_invalid_signature</code> / <code>mandate_expired</code> / <code>agent_missing_key</code> / <code>mandate_scope_mismatch</code>. (A plain JWS with no key binding is rejected — only SD-JWT+kb is accepted once AP2 is negotiated.)</span>
       <span class="k">merchant: own seal</span><span>The <code>merchant_authorization</code> <i>inside</i> the mandate must verify against the merchant's <b>own</b> key → <code>merchant_authorization_invalid</code>.</span>
-      <span class="k">merchant: terms match</span><span>Embedded checkout id + total must equal the live session → <code>mandate_scope_mismatch</code>.</span>
+      <span class="k">merchant: terms match</span><span>The embedded checkout's <b>id, currency, grand total and full line-item set</b> must equal the live session → <code>mandate_scope_mismatch</code>.</span>
       <span class="k">merchant: handler check</span><span><code>handler_id</code> must be in the advertised handler set (prevents key-confusion attacks).</span>
-      <span class="k">PSP: payment mandate</span><span>Independently verifies signature, expiry, <b>amount</b>, <b>payee</b> (merchant profile URL), <b>checkout id</b>, and cart-mandate linkage — then, and only then, pulls credentials from the CP.</span>
+      <span class="k">PSP: payment mandate</span><span>Independently verifies the <b>SD-JWT+kb</b> (issuer + holder key-binding, <code>aud</code>=payee / <code>nonce</code>=checkout id), the <code>vct</code> (<code>mandate.payment.1</code>), <code>transaction_id == checkout hash</code>, <b>payment_amount</b>, <b>payee</b>, expiry and checkout binding — then, and only then, pulls credentials from the CP.</span>
       <span class="k">CP: single-use token</span><span>Credentials released per token (a 3DS authorize→retry counts as one settlement); further replay → <code>token_replayed</code>.</span>
     </div>
     <p style="font-size:13px;color:var(--muted)">Everything verified is stored with the order as <b>dispute-ready evidence</b> —
@@ -1320,7 +2490,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
     Each scenario drives real signed protocol calls you watch in the trace — success, failure and capability flows side by side:</p>
     <div class="grid4" style="margin-top:6px">
       <div class="card" style="margin:0;border-top:4px solid var(--green)"><b style="font-size:13.5px">Success</b>
-        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>happy</code> full purchase · <code>express</code> next-day shipping (totals change) · <code>promo</code> discount code · <code>human_not_present</code> autonomous buy under a signed intent</p></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>happy</code> full purchase · <code>express</code> next-day shipping (totals change) · <code>promo</code> discount code · <code>human_not_present</code> autonomous buy under signed open mandates</p></div>
       <div class="card" style="margin:0;border-top:4px solid var(--red)"><b style="font-size:13.5px">Failure / attack</b>
         <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0"><code>threeds</code> 3-D Secure step-up → resolve → retry · <code>decline</code> hard decline · <code>tamper</code> · <code>replay</code> · <code>expired</code> · <code>stolen_key</code></p></div>
       <div class="card" style="margin:0;border-top:4px solid var(--accent)"><b style="font-size:13.5px">Capabilities</b>
@@ -1355,14 +2525,16 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">2 · Verified intent across parties</h3>
-    <p style="font-size:14px">The user's signed <b>IntentMandate</b> no longer stops at the agent. At
-    <code>complete_checkout</code> the agent presents it (<code>ap2.intent_mandate</code>); the <b>merchant</b> verifies the
-    signature against the CP's published JWKs and checks the basket total against the signed purchase ceiling, then
-    <b>forwards it to the PSP</b>, which re-validates independently. Both verification logs gain an
-    <code>intent_mandate</code> row — the purchase is provably within what the user asked for, at every hop.
-    The signed ceiling is the item budget + 20% fees headroom + $20 shipping (taxes and small add-ons are
-    user-approved later via the cart/checkout mandates).</p>
+    <h3 style="margin-top:0">2 · Verified authorization across parties</h3>
+    <p style="font-size:14px">The user's authorization no longer stops at the agent. At
+    <code>complete_checkout</code> the agent presents the user-signed <b>Checkout Mandate</b>
+    (<code>ap2.checkout_mandate</code>, SD-JWT+kb); the <b>merchant</b> verifies the signature + key-binding against the
+    CP's published JWKs and confirms the embedded terms match the live session, then the <b>Payment Mandate</b> travels
+    to the <b>PSP</b>, which re-validates independently (signature, <code>transaction_id == checkout hash</code>, amount,
+    payee). Both verification logs record the mandate — the purchase is provably what the user authorized, at every hop.
+    For <b>autonomous</b> (human-not-present) purchases, the user-signed <b>Open</b> Checkout/Payment Mandates carry the
+    constraints (allowed merchants, amount range, budget) and each closed mandate is verified to satisfy them — exactly
+    the bound the agent must shop within.</p>
   </div>
 
   <div class="card">
@@ -1399,7 +2571,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
     <p style="font-size:14px">Every trace event is <b>hash-chained</b>: <code>hash = SHA-256(seq, prev_hash, core fields, payload hash)</code>.
     Editing any past event breaks every subsequent hash — a tamper-evident log. <code>POST /api/audit/verify</code> re-derives
     the chain; <b>Export evidence bundle</b> (chip after any purchase) downloads a dispute-ready JSON with all signed
-    mandates (intent, cart, payment, checkout SD-JWT+kb) plus the chained event log.</p>
+    mandates (the Checkout + Payment Mandates as SD-JWT+kb; open mandates when autonomous) plus the chained event log.</p>
   </div>
 
   <div class="card">
@@ -1432,7 +2604,7 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <div class="kv">
         <span class="k">Idempotency-Key</span><span>Unique per call, <i>signed</i>, logged by caller and callee — the per-request correlation id.</span>
         <span class="k">checkout_id</span><span>Binds agent session ↔ merchant session ↔ mandates ↔ PSP transaction ↔ order ↔ webhook.</span>
-        <span class="k">mandate ids</span><span><code>intent_… → cart_… → pay_…</code> — the authorization chain, visible in the wallet log, the order evidence and the PSP verification record.</span>
+        <span class="k">mandate ids</span><span><code>chk_… → pay_…</code> (the Checkout + Payment Mandates) — the authorization chain, visible in the wallet log, the order evidence and the PSP verification record.</span>
         <span class="k">transaction_id</span><span>PSP record carrying the full mandate-verification breakdown.</span>
       </div>
     </div>
@@ -1468,6 +2640,10 @@ composed_checkout = allOf [
   fulfillment.json#/$defs/dev.ucp.shopping.checkout,      <span class="c">// + fulfillment fields</span>
   ap2_mandate.json#/$defs/dev.ucp.shopping.checkout       <span class="c">// + the ap2 object</span>
 ]</pre></div>
+    <p style="font-size:13px;color:var(--muted)">This composition runs both <b>offline</b> (<code>npm run validate</code>) and <b>at runtime</b>: the Shopping Agent's
+    schema resolver loads the vendored schemas, composes the checkout schema for the <i>negotiated</i> capabilities, and validates
+    the checkout response in-flow — per the spec's Resolution Flow (fetch → compose → validate) — surfaced as
+    <b>Schema Resolution</b> / <b>Schema Validation</b> cards in the Protocol Trace.</p>
   </div>
 
   <div class="grid2">
@@ -1498,7 +2674,7 @@ composed_checkout = allOf [
   </div>
 
   <div class="callout warn"><b>Documented simplifications.</b> In-memory keys/state (restart = clean slate); plain HTTP on
-  localhost (signature pipeline unchanged); the checkout mandate is a real SD-JWT+kb (issuer + holder key-binding + selective disclosure); biometric approval and the 3-D Secure bank page are simulated; PSP issuer/network authorization, declines and 3DS triggers are simulated by the chosen test card.</div>
+  localhost (signature pipeline unchanged); the checkout <b>and payment</b> mandates are real SD-JWT+kb (issuer + holder key-binding + selective disclosure); biometric approval and the 3-D Secure bank page are simulated; PSP issuer/network authorization, declines and 3DS triggers are simulated by the chosen test card. Both <b>human-present</b> (closed Checkout + Payment Mandates, signed by the user device key) and <b>human-not-present</b> (user-signed <b>open</b> mandates carrying constraints → agent-signed closed mandates) flows are implemented.</div>
 </section>
 
 <!-- ================== 13. REFERENCE ================== -->
@@ -1527,14 +2703,16 @@ ANTHROPIC_API_KEY=sk-… npm run dev   <span class="c"># Claude Haiku</span></pr
       <h3 style="margin-top:0">Error code registry (as implemented)</h3>
       <table style="font-size:12.5px">
         <tr><th>Layer</th><th>Codes</th></tr>
-        <tr><td>Discovery (−32001)</td><td><code>invalid_profile_url</code> <code>profile_unreachable</code></td></tr>
+        <tr><td>Negotiation / discovery (−32001)</td><td><code>invalid_profile_url</code> (400) <code>profile_unreachable</code> (424) <code>profile_malformed</code> (422) <code>version_unsupported</code> (422)</td></tr>
         <tr><td>Auth (−32000, 401/403)</td><td><code>signature_missing</code> <code>signature_invalid</code> <code>key_not_found</code> <code>profile_not_trusted</code></td></tr>
-        <tr><td>Integrity (−32600, 400)</td><td><code>digest_mismatch</code> <code>invalid_request</code></td></tr>
-        <tr><td>AP2 (enum)</td><td><code>mandate_required</code> <code>mandate_invalid_signature</code> <code>mandate_expired</code> <code>mandate_scope_mismatch</code> <code>merchant_authorization_invalid</code> <code>merchant_authorization_missing</code> <code>agent_missing_key</code></td></tr>
+        <tr><td>Integrity (−32600, 400)</td><td><code>digest_mismatch</code> <code>algorithm_unsupported</code> <code>invalid_request</code></td></tr>
+        <tr><td>AP2 (enum)</td><td><code>mandate_required</code> <code>mandate_invalid_signature</code> <code>mandate_expired</code> <code>mandate_scope_mismatch</code> <code>merchant_authorization_invalid</code> <code>merchant_authorization_missing</code> <code>agent_missing_key</code> <code>unresolved_constraint</code> <span style="color:var(--muted)">(human-not-present → present fallback)</span></td></tr>
         <tr><td>Identity linking (401/403)</td><td><code>invalid_token</code> <code>insufficient_scope</code></td></tr>
         <tr><td>Payment / wallet</td><td><code>payment_declined</code> <code>requires_3ds</code> <code>token_replayed</code> <code>token_not_found</code> <code>method_not_tokenizable</code></td></tr>
         <tr><td>Business (result envelope)</td><td><code>item_unavailable</code> <code>invalid_state</code> <code>payment_required</code> <code>invalid_handler</code> <code>invalid_discount_code</code> <code>not_found</code></td></tr>
+        <tr><td>Negotiation outcome (200 result)</td><td><code>capabilities_incompatible</code></td></tr>
         <tr><td>Idempotency (409)</td><td><code>idempotency_conflict</code></td></tr>
+        <tr><td>Rate limit (429/503)</td><td><code>velocity_exceeded</code> — with <code>Retry-After</code> header + <code>error.data.retry_after</code></td></tr>
       </table>
     </div>
   </div>
@@ -1596,46 +2774,248 @@ document.querySelectorAll('[data-tabs]').forEach(bar=>{
 });
 
 /* ---------- interactive journey ---------- */
+/* Each step carries an explanation (d) plus an example REQUEST (req) and
+   RESPONSE (res) payload — internally consistent: one checkout co_7f3a9c21d4,
+   a single Cadence ANC Pro at $274.00 → $297.63 with 8.625% tax, under $300.
+   reqL/resL override the default "Request"/"Response" labels for steps that
+   are local computations rather than wire calls. */
 const STEPS=[
  {t:'Discovery',tag:'ucp',s:'GET /.well-known/ucp × 4 merchants',
-  d:`The agent fetches each business profile. From <code>ucp.services</code> it resolves the live <b>MCP endpoint</b>; from <code>signing_keys</code> it learns the keys it will later verify signatures against. Profiles are cached (≥60s TTL floor, HTTPS-only, no redirects in production).`,
-  c:`profiles = await fetch('/m/{id}/.well-known/ucp')  // × wavelength, soundhub, electromart, audionest
-endpoint  = profiles[id].ucp.services['dev.ucp.shopping'].find(s => s.transport === 'mcp').endpoint`},
+  d:`The agent fetches each business profile. From <code>ucp.services</code> it resolves the live <b>MCP endpoint</b>; from <code>signing_keys</code> it learns the JWKs it will later verify signatures against. Profiles are cached (≥60s TTL floor, HTTPS-only in production).`,
+  reqL:'Request · HTTP', req:`GET /m/wavelength/.well-known/ucp HTTP/1.1
+Host: localhost:4101
+Accept: application/json`,
+  resL:'Response · business profile', res:`HTTP/1.1 200 OK
+Cache-Control: public, max-age=300
+{
+  "name": "Wavelength",
+  "ucp": {
+    "version": "2026-04-08",
+    "services": {
+      "dev.ucp.shopping": [
+        { "version": "2026-04-08", "transport": "mcp",
+          "endpoint": "http://localhost:4101/m/wavelength/mcp" }
+      ]
+    },
+    "capabilities": {
+      "dev.ucp.shopping.checkout":       [{ "version": "2026-04-08" }],
+      "dev.ucp.shopping.catalog.search": [{ "version": "2026-04-08" }],
+      "dev.ucp.shopping.order":          [{ "version": "2026-04-08" }],
+      "dev.ucp.shopping.fulfillment":    [{ "version": "2026-04-08", "extends": "dev.ucp.shopping.checkout" }],
+      "dev.ucp.shopping.ap2_mandate":    [{ "version": "2026-04-08", "extends": "dev.ucp.shopping.checkout" }]
+    },
+    "payment_handlers": {
+      "dev.ucp.shopping.checkout": [ { "id": "com.google.pay" }, { "id": "com.paystream.rtp" } ]
+    }
+  },
+  "signing_keys": [
+    { "kid": "wavelength-2026", "kty": "EC", "crv": "P-256", "alg": "ES256",
+      "use": "sig", "x": "f83OJ3D2xF1B…", "y": "x_FEzRu9m36H…" }
+  ]
+}`},
  {t:'Negotiation',tag:'ucp',s:'capability intersection',
-  d:`The spec's intersection algorithm runs per merchant: same capability name, mutual version, then orphaned extensions are pruned. <code>dev.ucp.shopping.ap2_mandate</code> survives everywhere ⇒ every session is <b>security-locked</b>: unsigned checkouts and mandate-less completion are now protocol violations.`,
-  c:`intersection = [checkout, catalog.search, order, fulfillment→checkout, ap2_mandate→checkout]
+  d:`The spec's intersection algorithm runs per merchant: same capability name, mutual version, then orphaned extensions are pruned. <code>dev.ucp.shopping.ap2_mandate</code> survives everywhere ⇒ the session is <b>security-locked</b>: unsigned checkouts and mandate-less completion are now protocol violations. This is a local computation — no wire call.`,
+  reqL:'Input · capability sets', req:`platform.capabilities = [ checkout, catalog.search, order, fulfillment, ap2_mandate ]
+merchant.capabilities = [ checkout, catalog.search, order, fulfillment, ap2_mandate, cart ]`,
+  resL:'Result · active intersection', res:`intersection = [
+  "dev.ucp.shopping.checkout",
+  "dev.ucp.shopping.catalog.search",
+  "dev.ucp.shopping.order",
+  "dev.ucp.shopping.fulfillment",   // extends checkout ✓ kept
+  "dev.ucp.shopping.ap2_mandate"    // extends checkout ✓ kept
+]
+// "cart" had no platform counterpart → dropped
 security_locked = true`},
- {t:'Intent Mandate',tag:'ap2',s:'user signs the constraints',
-  d:`The parsed constraints (category, features, ≤$300, 2-day) are sent to the Credentials Provider, which obtains user approval on a trusted surface and signs an <b>Intent Mandate</b> with the <b>user device key</b>. This is the agent's authorization boundary — everything later must fit inside it.`,
-  c:`sign_mandate(kind: 'IntentMandate', payload: { constraints: { max_total: {amount: 30000, currency:'USD'},
-  required_features: ['noise-cancelling','over-ear'], delivery_by_days: 2 }, human_present: true })`},
+ {t:'Constraints',tag:'ucp',s:'parse the request into a search boundary',
+  d:`The request is parsed into shopping constraints (category, features, ≤$300, 2-day). In AP2 v0.2 these are <b>not</b> a signed mandate — they bound the agent's search; the user authorizes the purchase later by signing the Checkout + Payment Mandates. (For an autonomous, human-not-present purchase the constraints are instead signed up front into <b>open</b> Checkout/Payment Mandates.)`,
+  reqL:'Input · user request', req:`"ANC over-ear headphones under $300, delivered within 2 days"`,
+  resL:'Result · parsed constraints', res:`{
+  "category": "headphones",
+  "required_features": ["noise-cancelling", "over-ear"],
+  "max_total": { "amount": 30000, "currency": "USD" },   // minor units = $300.00
+  "delivery_by_days": 2,
+  "human_present": true
+}
+// NOT signed — just the boundary the agent searches within.`},
  {t:'Federated search',tag:'ucp',s:'search_catalog × eligible merchants',
-  d:`One signed <code>search_catalog</code> call per merchant, with the official <code>filters.price.max</code> filter. Responses contain <code>product.json</code>-shaped products (price_range, variants, structured descriptions); the agent merges them into per-product offer lists. ElectroMart's Cadence ships in 3–4 days, so the 2-day constraint correctly excludes that offer.`,
-  c:`tools/call search_catalog { query, filters: { price: { max: 30000 }, ship_within_days: 2 } }
-→ { ucp: {…}, products: [ { id, title, description: {plain}, price_range, variants: [...] } ] }`},
- {t:'Create checkout',tag:'ucp',s:'create_checkout → signed terms',
-  d:`The agent opens one checkout session with the chosen merchant (line items, buyer, shipping destination). The merchant computes totals — <b>minor units</b>, exactly one subtotal and one total, negative discount, fulfillment line — and embeds <code>ap2.merchant_authorization</code>.`,
-  c:`tools/call create_checkout { checkout: { line_items, buyer, fulfillment } }
-→ checkout.status = 'ready_for_complete', totals.total = 32913  // $329.13`},
+  d:`One signed <code>search_catalog</code> call per merchant over the UCP <b>MCP binding</b> (JSON-RPC 2.0 <code>tools/call</code>, identity in <code>_meta["ucp-agent"]</code>, dual <code>structuredContent</code>+<code>content[]</code> output). The agent merges responses into per-product offer lists. ElectroMart's Cadence ships in 3–4 days, so the 2-day filter excludes that offer.`,
+  reqL:'Request · MCP tools/call', req:`POST /m/wavelength/mcp        // also soundhub, electromart, audionest
+Signature-Input: …   Signature: …   Content-Digest: …   Idempotency-Key: …
+{
+  "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+  "params": {
+    "name": "search_catalog",
+    "arguments": {
+      "query": "noise cancelling over-ear headphones",
+      "filters": { "price": { "max": 30000 }, "ship_within_days": 2 }
+    },
+    "_meta": { "ucp-agent": "http://localhost:4100/.well-known/ucp" }
+  }
+}`,
+  resL:'Response · JSON-RPC result', res:`{
+  "jsonrpc": "2.0", "id": 1,
+  "result": {
+    "structuredContent": {
+      "ucp": { "version": "2026-04-08",
+        "capabilities": { "dev.ucp.shopping.catalog.search": [{ "version": "2026-04-08" }] } },
+      "products": [
+        { "id": "cadence-anc-pro", "title": "Cadence ANC Pro",
+          "description": { "plain": "Hybrid ANC over-ear · 40h battery" },
+          "price_range": { "min": 27400, "max": 27400, "currency": "USD" },
+          "variants": [ { "id": "cadence-anc-pro", "price": 27400,
+                          "availability": "in_stock", "ship_days": 2 } ] }
+      ]
+    },
+    "content": [ { "type": "text", "text": "1 product matched your filters." } ]
+  }
+}`},
+ {t:'Create checkout',tag:'ucp',s:'create_checkout → merchant-signed terms',
+  d:`The agent opens one checkout session with the chosen merchant. The merchant computes totals — <b>minor units</b>, exactly one subtotal and one total, plus fulfillment + tax — and embeds <code>ap2.merchant_authorization</code>, a detached JWS over <code>JCS(checkout − ap2)</code>.`,
+  reqL:'Request · tools/call create_checkout', req:`"arguments": {
+  "checkout": {
+    "line_items": [
+      { "id": "li_1",
+        "item": { "id": "cadence-anc-pro", "title": "Cadence ANC Pro", "price": 27400 },
+        "quantity": 1 }
+    ],
+    "buyer": { "email": "alex@example.com" },
+    "fulfillment": { "method_type": "shipping",
+      "destination": { "address_region": "CA", "postal_code": "94107", "address_country": "US" } }
+  }
+}`,
+  resL:'Response · checkout (structuredContent)', res:`{
+  "ucp": { "version": "2026-04-08", "capabilities": { /* checkout, fulfillment, ap2_mandate */ } },
+  "id": "co_7f3a9c21d4",
+  "status": "ready_for_complete",
+  "currency": "USD",
+  "line_items": [ { "id": "li_1", "item": { "id": "cadence-anc-pro", "price": 27400 }, "quantity": 1 } ],
+  "totals": [
+    { "type": "subtotal",    "amount": 27400 },
+    { "type": "fulfillment", "display_text": "Shipping · 2-day", "amount": 0 },
+    { "type": "tax",         "display_text": "Tax",  "amount": 2363 },   // 8.625%
+    { "type": "total",       "amount": 29763 }                            // $297.63
+  ],
+  "links": [ { "rel": "terms", "href": "https://shop.wavelength.example/tos" } ],
+  "ap2": {
+    "merchant_authorization": "eyJhbGciOiJFUzI1NiIsImtpZCI6IndhdmVsZW5ndGgtMjAyNiJ9..MEUCIQDk7r…"
+  }
+}`},
  {t:'Verify merchant seal',tag:'pki',s:'platform MUST verify before showing the user',
-  d:`The agent reconstructs <code>JCS(checkout − ap2)</code>, resolves the merchant's JWK by <code>kid</code> from its profile, and verifies the detached JWS. Only a checkout with a valid seal reaches the user's screen. This repeats after <b>every</b> update (quantity, address) — and each change also re-issues the Cart Mandate.`,
-  c:`verify_detached_jws(checkout.ap2.merchant_authorization, JCS(checkout − ap2), jwk(kid))  // ✓`},
- {t:'Mint instrument',tag:'ucp',s:'wallet → single-use network token',
-  d:`The Google-Pay-style handler executes against the wallet: <code>mint_instrument</code> returns a single-use network token + cryptogram bound to this checkout. The PAN stays in the wallet — agent and merchant only ever see <code>visa •••• 4291</code> and an opaque token.`,
-  c:`tools/call mint_instrument { method_id: 'pm_visa_4291', context: { checkout_id, amount: 32913 } }
-→ { token: 'tok_…', network: 'visa', last4: '4291', single_use: true, cryptogram: '…' }`},
- {t:'Sign & complete',tag:'ap2',s:'biometric → 2 mandates → complete_checkout',
-  d:`On confirmation (“biometric”), the CP signs the <b>Payment Mandate</b> (amount + payee + checkout binding) and issues the <b>Checkout Mandate</b> as a real <b>SD-JWT+kb</b> (CP-issued, key-bound to the user device key, audience = this merchant, nonce = checkout id, with selective disclosure of the user id) embedding the full merchant-signed checkout. The agent submits both: the checkout mandate in <code>ap2</code>, the payment mandate inside the composite token, plus <code>dev.ucp.*</code> signals. Merchant verifies the whole chain (§9), then the PSP independently re-verifies, pulls credentials from the CP, authorizes and captures. The merchant <b>signs the response</b>; the completed checkout carries <code>order {id, permalink_url}</code>. (If the bank requires 3-D Secure, the checkout returns <code>requires_escalation</code> first — see §9.)`,
-  c:`tools/call complete_checkout { id, checkout: {
-  payment: { instruments: [{ handler_id, credential: { type: 'AP2_COMPOSITE',
-             token: { network_token, payment_mandate } } }] },
-  signals: { 'dev.ucp.buyer_ip': '…', 'dev.ucp.user_agent': '…' },
-  ap2: { checkout_mandate } } }`},
- {t:'Order webhook',tag:'ucp',s:'merchant pushes signed Order object',
-  d:`When the order ships (auto after ~8s, or “Ship now” in the portal), the merchant pushes a full <b>Order object</b> (order.json: line items with quantity tracking, fulfillment expectations + events with carrier/tracking) to the webhook URL from the platform profile's order-capability config. The webhook is <b>signed</b>; the agent verifies it before telling the user “it shipped”.`,
-  c:`POST /webhooks/ucp   (Signature-Input, Signature, Content-Digest, UCP-Agent)
-{ order: { id, checkout_id, permalink_url, fulfillment: { events: [{ type:'shipped',
-  carrier:'UPS', tracking_number:'1Z…' }] }, totals, … } }`}
+  d:`The agent reconstructs <code>JCS(checkout − ap2)</code>, resolves the merchant's JWK by <code>kid</code> from its profile, and verifies the detached JWS. Only a checkout with a valid seal reaches the user's screen — and this repeats after <b>every</b> update (quantity, address), each of which re-issues the <code>merchant_authorization</code>.`,
+  reqL:'Input · what the agent verifies', req:`mauth     = checkout.ap2.merchant_authorization     // "<protected>..<signature>"
+header    = mauth.split("..")[0]                     // base64url({ alg:"ES256", kid:"wavelength-2026" })
+payload   = base64url( JCS(checkout WITHOUT the ap2 field) )
+signature = mauth.split("..")[1]
+jwk       = profile.signing_keys.find(k => k.kid === "wavelength-2026")`,
+  resL:'Result', res:`ES256_verify(jwk, header + "." + payload, signature)  →  true ✓
+
+// Any byte changed in the cart ⇒ JCS differs ⇒ verify fails ⇒ checkout rejected
+// (error: merchant_authorization_invalid). The user never sees an unverified price.`},
+ {t:'Mint instrument',tag:'ucp',s:'wallet → single-use network token (GATE 1)',
+  d:`The Google-Pay-style handler executes against the wallet. <b>Policy gate №1</b>: the spend policy (per-tx cap, budget, allowlist, autonomy) is evaluated <i>before</i> a token exists. On pass, <code>mint_instrument</code> returns a single-use network token + cryptogram bound to this checkout; the PAN never leaves the wallet, and the policy snapshot travels inside the token.`,
+  reqL:'Request · tools/call mint_instrument  (Credentials Provider)', req:`POST /mcp        // Credentials Provider, signed
+"arguments": {
+  "method_id": "pm_visa_4291",
+  "context": { "checkout_id": "co_7f3a9c21d4", "merchant_id": "wavelength",
+               "amount": 29763, "human_present": true }
+}`,
+  resL:'Response', res:`{
+  "instrument": {
+    "type": "network_token", "token": "tok_9b2e5c7a1f4d…",
+    "network": "visa", "last4": "4291", "single_use": true,
+    "cryptogram": "A1B2C3D4E5…", "rail": "card_network"
+  },
+  "handler": "com.google.pay",
+  "policy": { "per_tx_cap": 50000, "budget": { "limit": 200000, "spent": 0 },
+              "allowlist": ["wavelength","soundhub","electromart","audionest"],
+              "autonomy": "human_present", "rail": "card_network" }
+}
+// Out of policy instead ⇒ error policy_cap_exceeded / policy_merchant_not_allowed (403)`},
+ {t:'Sign mandates',tag:'ap2',s:'Touch ID → Payment + Checkout Mandates (GATE 2)',
+  d:`On confirmation the CP signs two mandates with the <b>user device key</b>. The <b>Payment Mandate</b> (<b>policy gate №2</b>) is bound to the checkout via <code>transaction_id = hash(checkout)</code>. The <b>Checkout Mandate</b> is a real <b>SD-JWT+kb</b> (CP-issued, key-bound to the device key, <code>aud</code> = merchant, <code>nonce</code> = checkout id, selective disclosure of the user id) embedding the full merchant-signed checkout — so the user's signature covers the merchant's. A passkey (Touch ID) over <code>SHA-256(JCS(checkout − ap2))</code> gates the signing.`,
+  reqL:'Request · two tools/call sign_mandate', req:`// ① Payment Mandate
+"arguments": {
+  "kind": "PaymentMandate",
+  "payload": {
+    "vct": "mandate.payment.1",
+    "transaction_id": "wT8nQ2v…",                       // = base64url(sha256(checkout_jwt))
+    "payee": { "id": "wavelength", "name": "Wavelength",
+               "website": "http://localhost:4101/m/wavelength/.well-known/ucp" },
+    "payment_amount": { "amount": 29763, "currency": "USD" },
+    "payment_instrument": { "id": "instr_4291", "type": "card", "description": "visa ···· 4291" },
+    "checkout_id": "co_7f3a9c21d4", "human_present": true
+  }
+}
+// ② Checkout Mandate  (SD-JWT+kb)
+"arguments": {
+  "kind": "CheckoutMandate",
+  "payload": { "aud": "http://localhost:4101/m/wavelength/.well-known/ucp",
+               "nonce": "co_7f3a9c21d4", "human_present": true,
+               "checkout": { /* full merchant-signed checkout incl. ap2.merchant_authorization */ } },
+  "webauthn": { /* Touch ID assertion · challenge = SHA-256(JCS(checkout − ap2)), UV=1 */ }
+}`,
+  resL:'Response', res:`// ① Payment Mandate → signed by the user device key
+{ "jws": "eyJ…<payment_mandate>", "kid": "user-device-2026",
+  "format": "ap2-mandate+jwt", "approved_via": "device_biometric" }
+
+// ② Checkout Mandate → SD-JWT+kb (issuer JWT ~ sub disclosure ~ key-binding JWT)
+{ "jws": "eyJ…<issuer>~eyJ…<sub>~eyJ…<kb>", "kid": "walletly-issuer-2026",
+  "format": "dc+sd-jwt+kb",
+  "approved_via": "passkey · platform · Touch ID (UV verified, challenge bound to checkout terms)",
+  "passkey_evidence": { "type": "webauthn", "uv": true } }`},
+ {t:'Complete checkout',tag:'ucp',s:'complete_checkout → verify chain → pay (GATE 3)',
+  d:`The agent submits the composite credential (network token + payment mandate) plus the checkout mandate in <code>ap2</code>. The merchant runs the verification gauntlet (KYA → SD-JWT+kb → nested-binding self-check → terms match), then the <b>PSP independently re-verifies</b>, calls <code>release_credentials</code> (<b>policy gate №3</b>), authorizes and captures. The completion response is itself RFC 9421-signed over <code>@status</code>. (If the bank requires 3-D Secure, the response is <code>requires_escalation</code> + <code>continue_url</code> first.)`,
+  reqL:'Request · tools/call complete_checkout', req:`"arguments": {
+  "id": "co_7f3a9c21d4",
+  "checkout": {
+    "payment": { "instruments": [ {
+      "handler_id": "com.google.pay",
+      "credential": { "type": "AP2_COMPOSITE",
+        "token": { "network_token": "tok_9b2e5c7a1f4d…",
+                   "payment_mandate": "eyJ…<payment_mandate>" } }
+    } ] },
+    "signals": { "dev.ucp.buyer_ip": "203.0.113.7", "dev.ucp.user_agent": "Shoppy/1.0" },
+    "ap2": { "checkout_mandate": "eyJ…<issuer>~eyJ…<sub>~eyJ…<kb>" }
+  }
+}`,
+  resL:'Response · completed checkout (RFC 9421-signed)', res:`{
+  "id": "co_7f3a9c21d4",
+  "status": "completed",
+  "order": { "id": "ord_4e91c7",
+             "permalink_url": "https://shop.wavelength.example/orders/ord_4e91c7",
+             "estimated_delivery": "2026-06-18T17:00:00Z" },
+  "totals": [ /* … */ { "type": "total", "amount": 29763 } ],
+  "ap2": {
+    "checkout_receipt": "eyJ…<ap2-receipt+jwt, merchant-signed>",
+    "payment_receipt":  "eyJ…<ap2-receipt+jwt, PSP-signed>"
+  }
+}
+// Failure paths: mandate_required / mandate_expired / mandate_scope_mismatch,
+// agent_untrusted (KYA), payment_declined, requires_escalation (3-DS).`},
+ {t:'Order webhook',tag:'ucp',s:'merchant pushes a signed Order object',
+  d:`When the order ships (auto after ~8s, or "Ship now" in the portal), the merchant pushes a full <b>Order object</b> (line items with quantity tracking, fulfillment events with carrier/tracking) to the platform's order-capability webhook URL. The POST is <b>RFC 9421-signed</b>; the agent verifies the signature + Content-Digest before telling the user "it shipped".`,
+  reqL:'Request · POST /webhooks/ucp  (merchant → agent)', req:`POST /webhooks/ucp HTTP/1.1
+Host: localhost:4100
+Signature-Input: sig=("@method" "@target-uri" "content-digest");keyid="wavelength-2026";alg="ecdsa-p256-sha256"
+Signature: sig=:MEUCIQDk7r…:
+Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
+{
+  "event": "order.shipped",
+  "order": {
+    "id": "ord_4e91c7", "checkout_id": "co_7f3a9c21d4",
+    "permalink_url": "https://shop.wavelength.example/orders/ord_4e91c7",
+    "line_items": [ { "id": "li_1", "item": { "id": "cadence-anc-pro", "title": "Cadence ANC Pro" },
+                      "quantity": { "original": 1, "total": 1, "fulfilled": 1 }, "status": "shipped" } ],
+    "fulfillment": { "events": [ { "type": "shipped", "carrier": "UPS",
+                                   "tracking_number": "1Z999AA10123456784" } ] },
+    "currency": "USD", "totals": [ /* … */ { "type": "total", "amount": 29763 } ]
+  }
+}`,
+  resL:'Response', res:`HTTP/1.1 200 OK
+{ "received": true }
+
+// The agent re-derives Content-Digest and verifies Signature against the
+// merchant JWK BEFORE trusting the event or notifying the user.`}
 ];
 const stepsEl=document.getElementById('steps'), detailEl=document.getElementById('step-detail');
 STEPS.forEach((st,i)=>{
@@ -1646,19 +3026,80 @@ STEPS.forEach((st,i)=>{
 });
 function renderStep(i){
   const st=STEPS[i];
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const lbl='font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 5px;display:flex;align-items:center;gap:7px';
+  const block=(label,code,kind)=> code==null ? '' :
+    `<div style="${lbl}"><span style="width:7px;height:7px;border-radius:2px;background:${kind==='req'?'var(--accent)':'var(--green)'}"></span>${label}</div>`+
+    `<div class="codeblock"><button class="copy">copy</button><pre>${esc(code)}</pre></div>`;
+  // Back-compat: older steps may still carry a single `c` snippet.
+  const body = (st.req!=null||st.res!=null)
+    ? block(st.reqL||'Request', st.req, 'req') + block(st.resL||'Response', st.res, 'res')
+    : (st.c!=null ? `<div class="codeblock"><button class="copy">copy</button><pre>${esc(st.c)}</pre></div>` : '');
   detailEl.innerHTML=`<h3 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">Step ${i+1} · ${st.t}
     <span class="tag ${st.tag}" style="font-size:10px">${st.tag.toUpperCase()}</span></h3>
-    <p style="font-size:14px">${st.d}</p>
-    <div class="codeblock"><button class="copy">copy</button><pre>${st.c.replace(/</g,'&lt;')}</pre></div>`;
-  detailEl.querySelector('.copy').addEventListener('click',e=>{
-    navigator.clipboard.writeText(st.c);e.target.textContent='copied ✓';setTimeout(()=>e.target.textContent='copy',1400);
+    <p style="font-size:14px">${st.d}</p>${body}`;
+  detailEl.querySelectorAll('.codeblock').forEach(cb=>{
+    const pre=cb.querySelector('pre');
+    cb.querySelector('.copy').addEventListener('click',e=>{
+      navigator.clipboard.writeText(pre.textContent);
+      e.target.textContent='copied ✓';setTimeout(()=>e.target.textContent='copy',1400);
+    });
   });
 }
 renderStep(0);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <script>
-  mermaid.initialize({ startOnLoad: true, theme: "neutral", sequence: { mirrorActors: false, actorMargin: 36, messageFontSize: 13, noteFontSize: 12 } });
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "neutral",
+    securityLevel: "loose",
+    sequence: {
+      mirrorActors: false,
+      actorMargin: 40,
+      messageFontSize: 12.5,
+      noteFontSize: 11.5,
+      noteMargin: 10,
+      wrap: true,            // wrap long notes/messages so the diagram fits the page width
+      useMaxWidth: true      // scale to the container; never overflow/clip
+    },
+    flowchart: { useMaxWidth: true }
+  });
+</script>
+<button id="toTop" aria-label="Back to top" title="Back to top">↑</button>
+<script>
+/* ---------- polish: heading anchors, back-to-top, aria-current ---------- */
+(function () {
+  // Deep-linkable heading anchors (h2/h3 that have an id, or whose section has one)
+  document.querySelectorAll("main h2, main h3").forEach(function (h) {
+    var id = h.id || (h.closest("section") && h.closest("section").id);
+    if (!id || h.querySelector(".anchor")) return;
+    var a = document.createElement("a");
+    a.className = "anchor"; a.href = "#" + id; a.textContent = "¶";
+    a.setAttribute("aria-label", "Link to this section");
+    h.appendChild(a);
+  });
+  // Back-to-top
+  var toTop = document.getElementById("toTop");
+  if (toTop) {
+    var onScroll = function () { toTop.classList.toggle("show", window.scrollY > 600); };
+    addEventListener("scroll", onScroll, { passive: true }); onScroll();
+    toTop.addEventListener("click", function () {
+      var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+      document.getElementById("content") && document.getElementById("content").focus({ preventScroll: true });
+    });
+  }
+  // Reflect the scrollspy active link to assistive tech
+  var navObserver = new MutationObserver(function () {
+    document.querySelectorAll(".nav a").forEach(function (a) {
+      if (a.classList.contains("active")) a.setAttribute("aria-current", "true");
+      else a.removeAttribute("aria-current");
+    });
+  });
+  var nav = document.querySelector(".nav");
+  if (nav) navObserver.observe(nav, { attributes: true, subtree: true, attributeFilter: ["class"] });
+})();
 </script>
 </body>
 </html>

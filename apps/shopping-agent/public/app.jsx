@@ -9,6 +9,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let _uid = 0;
 const nextUid = () => "u" + _uid++;
 
+// Detect a human-not-present request typed straight into the chat (mirrors the
+// server's nlu.detectAutonomy), so HNP can be configured from chat — not just the
+// toggle or the Scenarios panel.
+const AUTO_RE = /\b(autonomous(?:ly)?|human[ -]?not[ -]?present|on my behalf|without me|while i'?m away|you decide|don'?t ask|just buy it|buy it for me|purchase it for me|go ahead and buy|buy the best)\b/i;
+const DROP_RE = /(?:if|when|once)[^.]*?(?:drops?|falls?|below|under)\s*\$?\s*\d/i;
+const looksAutonomous = (text) => AUTO_RE.test(text) || DROP_RE.test(text);
+
 // Backend uses UCP/schema.org-style postal address fields (street_address, address_locality, …)
 const toUiAddr = (a) => ({
   name: a.name || [a.first_name, a.last_name].filter(Boolean).join(" "),
@@ -51,10 +58,12 @@ function App() {
 
   const [paying, setPaying] = useState(false);
   const [gpayOpen, setGpayOpen] = useState(false);
+  const [threeds, setThreeds] = useState(null); // interactive 3-D Secure step-up: { continue_url, amount, assertion }
   const [payMethod, setPayMethod] = useState(null);
   const [payMethods, setPayMethods] = useState([]); // wallet methods for the in-sheet picker
   const [lastChatFail, setLastChatFail] = useState(null); // retry support for LLM chat
   const [passkey, setPasskey] = useState(null);
+  const passkeySkipped = useRef(false); // session memory: user chose "pay without Touch ID"
   const [payRail, setPayRail] = useState("card_network"); // multi-rail: previewed from policy, confirmed at /pay
   const [order, setOrder] = useState(null);
   const [shipped, setShipped] = useState(false);
@@ -68,6 +77,8 @@ function App() {
   const [scenResult, setScenResult] = useState(null);
   const [llmAgent, setLlmAgent] = useState(false);
   const [llmChat, setLlmChat] = useState(false); // interactive LLM chat mode (vs scripted)
+  const [autonomous, setAutonomous] = useState(false); // human-not-present: agent signs & pays under user-signed open mandates
+  const [hnpSetup, setHnpSetup] = useState(null); // interactive HNP authorize: { merchants, payment_methods, constraints }
   const [autoSnap, setAutoSnap] = useState(null); // snapshot from a scenario / LLM-agent run
 
   const busy = useRef(false);
@@ -263,15 +274,68 @@ function App() {
     setInput(""); setScenOpen(false);
     resetForAuto();
     addUser(goal);
-    addBot(`<b>🤖 Autonomous mode.</b> I'll do the whole purchase myself — search, pick, check out and pay — and show you the result. (To choose things yourself instead, just type a request and I'll show you options.)`);
+    addBot(`<b>🤖 Autonomous mode (human-not-present).</b> You've signed open mandates authorizing me to act; I'll search, pick, check out, and sign the closed mandates myself under those open mandates — no card tap — then show you the result.`);
     openTrace();
     try {
       await API.reset((ev) => { setTrace((tr) => [...tr, ev]); setTraceUnseen((n) => n + 1); });
       await botType(700);
-      const r = await API.agent(goal);
+      const r = await API.agent(goal, false);
       addBot(`I called <b>${r.steps.length}</b> tools: ${r.steps.map((s) => `<code>${s.tool}</code>`).join(" → ")}.<br/>${r.final}`);
       renderSnapshot(r.snapshot);
     } catch (e) { addBot(`LLM agent error: ${e.message}. Set OPENAI_API_KEY or ANTHROPIC_API_KEY and restart.`); }
+  }
+
+  // Deterministic end-to-end HUMAN-NOT-PRESENT purchase (no LLM key needed): the
+  // user authorizes once (open mandates) and leaves; the agent does the whole
+  // task itself — search, pick, check out, sign the closed mandates, pay.
+  // Interactive human-not-present, step 1: parse the request, then ASK the user
+  // to choose the merchant allowlist + payment method (the authorization). The
+  // agent only continues once the user authorizes — then it runs on its own.
+  async function runAutonomousFlow(text) {
+    resetForAuto();
+    addUser(text);
+    openTrace();
+    setTyping(true);
+    try {
+      // Fresh session for the autonomous flow; prepare + authorize share it.
+      await API.reset((ev) => { setTrace((tr) => [...tr, ev]); setTraceUnseen((n) => n + 1); });
+      const setup = await API.autonomyPrepare(text);
+      setTyping(false);
+      const c = setup.constraints || {};
+      const cap = c.buy_below != null ? `buy only at ≤ $${c.buy_below}` : c.max_total != null ? `budget ≤ $${c.max_total}` : "your budget";
+      if (!setup.products?.length) { addBot(`I searched but nothing fit those constraints — try relaxing the budget or features.`); return; }
+      setHnpSetup(setup);
+      addBot(`<b>🤝 Human-not-present.</b> Before I shop on your own, authorize me <b>once</b>: choose which <b>merchants</b> I may use and the <b>payment method</b>. I'll sign Open Checkout + Payment Mandates to those constraints (${cap}), then complete the purchase myself — no further taps.`);
+      addBlock("hnp-setup");
+    } catch (e) { setTyping(false); fail(e); }
+  }
+
+  // Step 2: the user authorized — sign the open mandates with their choices and
+  // run the purchase autonomously.
+  async function authorizeHnp(merchantIds, methodId, methodLabel, merchantLabels) {
+    setHnpSetup(null); // collapse the setup card
+    addUser(`Authorize: merchants = ${merchantLabels || "any"} · pay with ${methodLabel || "default"}.`);
+    addBot(`<b>🔐 Authorizing…</b> signing Open Checkout + Payment Mandates (allowed_merchants + payment method + cap) with your device key. <b>This is the only time you're in the loop</b> — then you can walk away.`);
+    openTrace();
+    try {
+      // Same session as the prepare step — do NOT reset (that would drop the
+      // discovered products/constraints the authorization needs).
+      await botType(700);
+      addBot(`<b>🚶 You leave.</b> No card tap, no Touch ID, no “confirm?” — I act within what you signed.`);
+      await botType(500);
+      const r = await API.autonomyAuthorize(merchantIds, methodId);
+      if (r.order) {
+        addBot(`<b>🤖 Bought it autonomously — you approved 0 times at checkout.</b> I picked <span class="hl">${r.product}</span> at the best authorized merchant, paid with ${r.payment_method || "your method"}, and signed the <b>closed</b> mandates with my <i>own</i> agent key (verified by merchant + PSP against your open mandates). Order <b>${r.order.id}</b> · <b>${S.money(r.total)}</b>.<br/><span style="color:var(--muted)">Human-present would have stopped here for your Touch ID + a tap — that's the difference.</span>`);
+      } else if (r.watching) {
+        const capTxt = r.cap != null ? `$${r.cap}` : "your";
+        const priceTxt = r.current_total != null ? `<b>${S.money(r.current_total)}</b>` : "the best available price";
+        const prod = r.product ? `for <span class="hl">${r.product}</span> ` : "";
+        addBot(`<b>🤖 Held off — did NOT buy.</b> Best price ${prod}is ${priceTxt}, above your <b>${capTxt}</b> cap. Your Open Payment Mandate blocks overpaying — I'll complete only within cap. (Run the <b>HNP price-drop</b> scenario to watch the trigger fire.)`);
+      } else {
+        addBot(`None of the merchants you authorized had a matching offer, so I did <b>not</b> buy${r.note ? ` (${r.note})` : ""}.`);
+      }
+      renderSnapshot(r.snapshot);
+    } catch (e) { fail(e); }
   }
 
   async function showOrders() {
@@ -323,7 +387,7 @@ function App() {
     addUser(text);
     setTyping(true);
     try {
-      const r = await API.intent(text);
+      const r = await API.intent(text, autonomous ? false : undefined);
       setTyping(false);
       const c = r.constraints;
       const bits = [];
@@ -331,7 +395,11 @@ function App() {
       if (c.required_features?.length) bits.push(c.required_features.join(" · "));
       if (c.max_total != null) bits.push("under $" + c.max_total);
       if (c.delivery_days != null) bits.push(c.delivery_days + "-day delivery");
-      addBot(`Locked in. I captured your constraints as a signed <span class="hl">Intent Mandate</span> — <b>${bits.join(" · ") || c.query}</b>. That's the cryptographic boundary I'll shop within${c.engine === "llm" ? " (parsed by LLM)" : ""}.`);
+      addBot(
+        autonomous
+          ? `Locked in — <b>${bits.join(" · ") || c.query}</b>${c.engine === "llm" ? " (parsed by LLM)" : ""}. You signed <span class="hl">Open Checkout + Payment Mandates</span> (constraints + <code>cnf</code>=my key) — I'll buy autonomously within them, no card tap.`
+          : `Locked in — <b>${bits.join(" · ") || c.query}</b>${c.engine === "llm" ? " (parsed by LLM)" : ""}. I'll show you options; you approve and pay. (The closed Checkout & Payment Mandates are signed at pay time.)`
+      );
       await botType(500);
       if (!r.products.length) {
         addBot(`I queried <b>${r.merchantsQueried} merchants</b> over UCP but nothing fit those constraints. Try relaxing the budget or features.`);
@@ -409,7 +477,7 @@ function App() {
       setCheckout(r);
       const m = r.merchant;
       const rail = await previewRail(r.totals.total);
-      addBot(`Here's your live checkout with <span class="hl">${m.name}</span> — created over UCP, and the merchant's <b>signature on these exact terms verified</b>. I attached your default shipping address and sealed a <span class="hl">Cart Mandate</span> for <b>${S.money(r.totals.total)}</b>. ${rail === "rtp" ? `Per your wallet policy this will settle via <span class="hl">RTP — instant bank transfer</span>.` : `Review it and pay with Google Pay when ready.`}`);
+      addBot(`Here's your live checkout with <span class="hl">${m.name}</span> — created over UCP, and the merchant's <b>signature on these exact terms verified</b>. I attached your default shipping address; on checkout you'll sign a <span class="hl">Checkout Mandate</span> over these exact terms for <b>${S.money(r.totals.total)}</b>. ${rail === "rtp" ? `Per your wallet policy this will settle via <span class="hl">RTP — instant bank transfer</span>.` : `Review it and pay with Google Pay when ready.`}`);
       await sleep(150);
       addBlock("checkout");
       setPhase("checkout");
@@ -463,6 +531,22 @@ function App() {
     return v;
   }
 
+  // Shared "order confirmed" UI for both the human-present (card) path and the
+  // autonomous (human-not-present) path.
+  async function showPaidOrder(r, { assertion, auto } = {}) {
+    setOrder({ id: r.order.id, eta: r.eta, last4: r.last4, total: r.total });
+    await botType(500);
+    const m = checkoutRef.current.merchant;
+    const via = payRail === "rtp" ? "instant bank transfer (RTP)" : "Google Pay";
+    const how = auto
+      ? " — and I signed the closed mandates myself with my agent key under your pre-authorized open mandates (human-not-present: you approved 0 times here)"
+      : ` — ✋ you approved it at checkout${assertion ? " with Touch ID" : " on the Google Pay sheet"}, and the closed mandates were signed by your device key`;
+    addBot(`<b>Paid.</b> Your order with <span class="hl">${m.name}</span> is confirmed — <b>${S.money(r.total)}</b> charged via ${via}${how} (mandate chain verified by merchant and PSP), arriving <b>${r.eta}</b>. Here's your receipt.`);
+    addBlock("receipt");
+    setPhase("paid");
+    coShown.current = false; // allow a fresh checkout card if the user shops again
+  }
+
   async function onPay() {
     if (busy.current) return; busy.current = true;
     setPaying(true);
@@ -470,7 +554,14 @@ function App() {
       const r = await API.pay();
       applyPayResult(r);
       setPaying(false);
-      setGpayOpen(true);
+      if (autonomous) {
+        // Human-not-present: no Google Pay sheet — the agent pays autonomously
+        // under the user's signed open mandates.
+        const conf = await API.payConfirm(false);
+        await showPaidOrder(conf, { auto: true });
+      } else {
+        setGpayOpen(true);
+      }
     } catch (e) { setPaying(false); fail(e); }
     busy.current = false;
   }
@@ -498,24 +589,41 @@ function App() {
   async function onPayConfirm(assertion) {
     try {
       const r = await API.payConfirm(undefined, assertion);
+      if (r.threeds) {
+        // The issuer requires Strong Customer Authentication. Close the wallet
+        // sheet and hand the bank's challenge page to the 3-D Secure modal — the
+        // payment isn't done yet, so we do NOT show the wallet ✓.
+        setGpayOpen(false);
+        setThreeds({ continue_url: r.threeds.continue_url, amount: r.total, assertion });
+        return false;
+      }
       // Native-sheet behavior (Apple Pay / Google Pay): the sheet flashes a ✓
       // success state, then auto-dismisses — it must not stay interactive.
       setTimeout(() => setGpayOpen(false), 1100);
-      setOrder({ id: r.order.id, eta: r.eta, last4: r.last4, total: r.total });
-      await botType(500);
-      const m = checkoutRef.current.merchant;
-      const how = assertion ? " (verified with a real passkey / Touch ID)" : "";
-      const via = payRail === "rtp" ? "instant bank transfer (RTP)" : "Google Pay";
-      addBot(`<b>Paid.</b> Your order with <span class="hl">${m.name}</span> is confirmed — <b>${S.money(r.total)}</b> charged via ${via}${how} (mandate chain verified by merchant and PSP), arriving <b>${r.eta}</b>. Here's your receipt.`);
-      addBlock("receipt");
-      setPhase("paid");
-      coShown.current = false; // allow a fresh checkout card if the user shops again
+      await showPaidOrder(r, { assertion });
       return true; // tells the wallet frame to show its ✓ success state
     } catch (e) {
       setGpayOpen(false);
       fail(e);
       return false;
     }
+  }
+
+  // The bank page posted its result: on approval, resolve the challenge + retry
+  // the authorization server-side; on cancel, leave the checkout payable.
+  async function onThreeDsResult(outcome) {
+    const t = threeds;
+    setThreeds(null);
+    if (outcome !== "success") {
+      addBot("You cancelled 3-D Secure, so the payment wasn't completed. You can review the checkout and try paying again.");
+      return;
+    }
+    setTyping(true);
+    try {
+      const r = await API.threedsResolve("success");
+      setTyping(false);
+      await showPaidOrder(r, { assertion: t && t.assertion });
+    } catch (e) { setTyping(false); fail(e); }
   }
 
   /* ---------- track / webhook ---------- */
@@ -621,7 +729,7 @@ function App() {
       a.download = `evidence-${bundle.session_id || "session"}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
-      addBot(`<b>Evidence bundle exported.</b> The audit trail is a tamper-evident hash chain — <b>${audit.length} events</b>, chain ${audit.valid ? "✓ valid" : "✗ BROKEN at " + audit.broken_at}. The bundle includes every signed mandate (intent, cart, payment, checkout SD-JWT+kb) and the chained event log — dispute-ready.`);
+      addBot(`<b>Evidence bundle exported.</b> The audit trail is a tamper-evident hash chain — <b>${audit.length} events</b>, chain ${audit.valid ? "✓ valid" : "✗ BROKEN at " + audit.broken_at}. The bundle includes every signed mandate (the Checkout + Payment Mandates as SD-JWT+kb; open mandates when autonomous) and the chained event log — dispute-ready.`);
     } catch (e) { fail(e); }
     busy.current = false;
   }
@@ -634,7 +742,7 @@ function App() {
     if (top) {
       const best = top.offers[0];
       const m = results.merchants[best.merchant];
-      addBot(`The <b>${top.name}</b> hits every constraint in your Intent Mandate, and the best live offer is <b>${S.money(best.price)}</b> from <span class="hl">${m.name}</span> (${best.ship}). ${top.note || ""} Every price you see came back from a real signed <b>catalog.search</b> call — open the protocol trace to inspect the raw JSON-RPC.`);
+      addBot(`The <b>${top.name}</b> hits every constraint you set, and the best live offer is <b>${S.money(best.price)}</b> from <span class="hl">${m.name}</span> (${best.ship}). ${top.note || ""} Every price you see came back from a real signed <b>catalog.search</b> call — open the protocol trace to inspect the raw JSON-RPC.`);
     }
     busy.current = false;
   }
@@ -643,7 +751,11 @@ function App() {
     const text = input.trim();
     if (!text) return;
     setInput("");
+    // Human-not-present toggle takes precedence in EVERY mode (scripted or LLM
+    // chat): it routes to the interactive authorize flow (merchants + payment).
+    if (autonomous) { runAutonomousFlow(text); return; }
     if (llmChat && llmAgent) { sendLlmTurn(text); return; } // real LLM, turn by turn
+    if (phase === "intro" && looksAutonomous(text)) { runAutonomousFlow(text); return; } // HNP configured straight from chat
     if (phase === "intro") { runIntent(text); return; }
     (async () => {
       addUser(text);
@@ -674,7 +786,7 @@ function App() {
         <CheckoutCard rail={payRail} merchant={checkout.merchant} items={items} onQty={changeQty}
           address={address} editingAddr={editingAddr} draftAddr={draftAddr} setDraftAddr={setDraftAddr}
           onEditAddr={startEditAddr} onSaveAddr={saveAddr} totals={checkout.totals} onPay={onPay} paying={paying} paid={orderPlaced}
-          mandateHint={`Cart Mandate ${checkout.cart_mandate_id ? checkout.cart_mandate_id.slice(0, 14) + "… " : ""}sealed · merchant signature verified`} />
+          mandateHint={`Merchant-signed checkout verified${checkout.merchant_signed ? " ✓" : ""} · Checkout Mandate signed at pay time`} />
       );
     }
     if (msg.kind === "receipt" && checkout && order) {
@@ -683,6 +795,10 @@ function App() {
         <Receipt orderId={order.id} merchant={checkout.merchant} items={items} totals={checkout.totals}
           address={address} eta={order.eta} shipped={shipped} payInstrument={order.last4} onTrack={openTrace} onPdf={downloadReceiptPdf} />
       );
+    }
+    // ----- interactive human-not-present authorization (the one human step) -----
+    if (msg.kind === "hnp-setup") {
+      return hnpSetup ? <HnpSetupCard setup={hnpSetup} onAuthorize={authorizeHnp} /> : null;
     }
     // ----- automated-run (scenario / LLM agent / chat) result cards -----
     const snap = msg.snap || autoSnap;
@@ -814,7 +930,11 @@ function App() {
               <button className="send" disabled={!input.trim()} onClick={handleSend}><Icon name="arrowUp" size={19} /></button>
             </div>
             <div className="composer-hint">
-              <span>{llmChat && llmAgent ? "Real LLM, step by step — it searches, presents options, and asks before paying" : "Scripted flow — deterministic, no API key needed"} · everything in the trace is real</span>
+              <span>{autonomous ? "Human-not-present — say what you want; I'll ask you to authorize merchants + a payment method once, then buy on my own (no card tap)" : (llmChat && llmAgent ? "Real LLM, step by step — it searches, presents options, and asks before paying" : "Scripted flow — deterministic, no API key needed")} · everything in the trace is real</span>
+              <button className={"mode-toggle " + (autonomous ? "on" : "")} title="Human-present (you approve & pay) vs human-not-present (agent buys autonomously under signed open mandates)"
+                onClick={() => { setAutonomous((v) => !v); }}>
+                <span className="dot" /> {autonomous ? "🤝 Human-not-present" : "🙋 Human-present"}
+              </button>
               {llmAgent && (
                 <button className={"mode-toggle " + (llmChat ? "on" : "")} title="Toggle real LLM chat vs scripted flow"
                   onClick={() => { setLlmChat((v) => !v); }}>
@@ -829,8 +949,12 @@ function App() {
           <WalletSheetFrame walletOrigin={(urls && urls.credentialsProvider) || "http://localhost:4102"}
             total={checkout.totals.total} address={address} merchant={checkout.merchant} method={payMethod}
             methods={payMethods} passkey={passkey}
+            skipPasskeyEnroll={passkeySkipped.current} onPasskeySkipped={() => { passkeySkipped.current = true; }}
             onClose={() => setGpayOpen(false)} onConfirm={onPayConfirm}
             onChangeMethod={changePayMethod} onEnrollOptions={enrollOptions} onEnrollComplete={enrollComplete} />
+        )}
+        {threeds && (
+          <ThreeDSModal continueUrl={threeds.continue_url} amount={threeds.amount} onResult={onThreeDsResult} />
         )}
         {scenOpen && (
           <ScenarioPanel scenarios={scenarios} running={scenRunning} result={scenResult} llmAgent={llmAgent}
@@ -854,6 +978,52 @@ function App() {
         <TweakToggle label="Auto-open on mandates" value={t.autoOpenTrace}
           onChange={(v) => setTweak("autoOpenTrace", v)} />
       </TweaksPanel>
+    </div>
+  );
+}
+
+// Interactive human-not-present authorization card: the user picks the merchant
+// allowlist + payment method ONCE, then the agent runs the purchase on its own.
+function HnpSetupCard({ setup, onAuthorize }) {
+  const merchants = setup.merchants || [];
+  const methods = setup.payment_methods || [];
+  const [picked, setPicked] = useState(() => new Set(merchants.map((m) => m.id))); // default: all allowed
+  const [method, setMethod] = useState(() => (methods.find((m) => m.default) || methods[0] || {}).id);
+  const toggle = (id) => setPicked((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const ids = [...picked];
+  const allOn = picked.size === merchants.length;
+  const methodObj = methods.find((m) => m.id === method);
+  const merchantLabels = allOn ? `any (${merchants.length})` : merchants.filter((m) => picked.has(m.id)).map((m) => m.name).join(", ");
+  const ready = picked.size > 0 && !!method;
+  const chip = (on) => ({ padding: "6px 12px", borderRadius: 999, border: "1px solid var(--line, #e5e7eb)", background: on ? "var(--accent, #2563eb)" : "transparent", color: on ? "#fff" : "var(--ink, #111)", cursor: "pointer", fontSize: 13, fontWeight: 600 });
+  const lbl = { fontSize: 12, color: "var(--muted, #6b7280)", margin: "12px 0 5px", textTransform: "uppercase", letterSpacing: ".04em" };
+  return (
+    <div style={{ border: "1px solid var(--line, #e5e7eb)", borderRadius: 14, padding: 14, background: "var(--card, #fff)" }}>
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>🤝 Authorize autonomous shopping</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted, #6b7280)" }}>Choose once — then I act on my own within these constraints.</div>
+      <div style={lbl}>Merchants I may use</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {merchants.map((m) => (
+          <button key={m.id} type="button" style={chip(picked.has(m.id))} onClick={() => toggle(m.id)}>
+            {picked.has(m.id) ? "✓ " : ""}{m.name}
+          </button>
+        ))}
+      </div>
+      <div style={lbl}>Payment method</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {methods.map((m) => (
+          <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", opacity: method === m.id ? 1 : 0.85 }}>
+            <input type="radio" name="hnp-method" checked={method === m.id} onChange={() => setMethod(m.id)} />
+            {m.display}
+          </label>
+        ))}
+      </div>
+      <button type="button" disabled={!ready}
+        style={{ marginTop: 14, width: "100%", padding: "10px 14px", borderRadius: 10, border: "none", background: ready ? "var(--accent, #2563eb)" : "var(--muted, #9ca3af)", color: "#fff", fontWeight: 700, cursor: ready ? "pointer" : "default" }}
+        onClick={() => onAuthorize(ids, method, methodObj?.display, merchantLabels)}>
+        🔐 Authorize &amp; let the agent buy
+      </button>
+      <div style={{ fontSize: 12, color: "var(--muted, #6b7280)", marginTop: 8 }}>You'll sign Open Checkout + Payment Mandates to these constraints — the only time you're asked. After this the agent completes the purchase itself (no card tap).</div>
     </div>
   );
 }
