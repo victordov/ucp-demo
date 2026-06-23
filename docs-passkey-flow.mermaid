@@ -35,9 +35,10 @@ sequenceDiagram
         CP-->>SA: checkout_mandate (dc+sd-jwt~kb)<br/>+ passkey_evidence {type, credential_id, uv:true, challenge}
     end
 
-    Note over SA,CP: Device key also signs the PaymentMandate
-    SA->>CP: sign_mandate(kind=PaymentMandate)<br/>(spend-policy check at signing surface)
-    CP-->>SA: payment_mandate = compact JWS<br/>signed by user device key
+    Note over SA,CP: CP also issues the PaymentMandate (AP2 ref order: after the CheckoutMandate)
+    SA->>CP: sign_mandate(kind=PaymentMandate)<br/>(spend-policy gate ② at the signing surface)
+    CP->>CP: issue SD-JWT+kb PaymentMandate (mandate.payment.1):<br/>• issuer sig = CP service key<br/>• holder = USER DEVICE KEY (KB-JWT aud=payee, nonce=checkout id)<br/>• selective disclosure (reveal payment_instrument)<br/>• transaction_id = b64u(SHA-256(JCS checkout)) binds it to the checkout
+    CP-->>SA: payment_mandate (dc+sd-jwt~kb)
 
     Note over SA,M: Complete checkout
     SA->>M: complete_checkout(ap2.checkout_mandate,<br/>composite token {network_token, payment_mandate})
@@ -48,6 +49,6 @@ sequenceDiagram
     M->>PSP: authorize_payment(composite token)
     PSP->>PSP: verify merchant HTTP signature (RFC 9421)
     PSP->>CP: fetch CP profile (JWKs)
-    PSP->>PSP: verify PaymentMandate JWS vs<br/>USER DEVICE KEY • scope: amount,<br/>payee, checkout binding, expiry
+    PSP->>PSP: verify PaymentMandate SD-JWT+kb:<br/>• issuer sig vs CP service key (fetched JWKs)<br/>• KB-JWT vs USER DEVICE KEY (aud=merchant, nonce=checkout id)<br/>• scope: amount, payee, transaction_id == checkout hash, expiry
     PSP-->>M: authorized (txn id)
     M-->>SA: order created — mandates archived<br/>as dispute evidence

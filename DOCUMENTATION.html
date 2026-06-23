@@ -895,7 +895,7 @@ details.av-flat .av-flat-body{padding:2px 16px 8px}
     { edge: "agent-cp",            tool: "get_agent_policy",   cap: "Agent reads the spend policy from the wallet: caps, budget, allowlist, autonomy and the allowed settlement rail." },
     { edge: "agent-merchant-ucp",  tool: "create_checkout",    cap: "create_checkout opens the cart. The merchant computes line items, tax and the total, and signs merchant_authorization." },
     { edge: "agent-cp",            tool: "mint_instrument",    cap: "GATE 1 - the wallet mints a single-use instrument only if the purchase is inside policy (else policy_*_violation)." },
-    { edge: "agent-cp",            tool: "sign_mandate",       cap: "GATE 2 - the user’s device key signs the Payment + Checkout mandates as SD-JWT+kb. No spend without this signature." },
+    { edge: "agent-cp",            tool: "sign_mandate",       cap: "GATE 2 — the Checkout + Payment Mandates are CP-issued and key-bound to the user’s device key as SD-JWT+kb. No spend without this signature." },
     { edge: "agent-merchant-ucp",  tool: "complete_checkout",  cap: "Agent submits complete_checkout with the AP2 composite credential + checkout_mandate. Response is signed over @status." },
     { edge: "merchant-psp",        tool: "lookup_agent",       cap: "KYA GATE - the PSP checks the agent registry + reputation before any money moves." },
     { edge: "merchant-psp",        tool: "authorize_payment",  cap: "authorize_payment re-verifies the entire mandate chain independently (composite token + payment_mandate)." },
@@ -1770,9 +1770,9 @@ sequenceDiagram
     A->>CP: mint_instrument — POLICY GATE №1 (cap·budget·allowlist·autonomy)
     CP-->>A: single-use token + policy snapshot bound in
     Note over U,CP: Trusted Surface (CP-hosted) — consent + signing
-    A->>CP: sign_mandate(PaymentMandate) — POLICY GATE №2
     U->>CP: Touch ID (WebAuthn/SPC assertion over SHA-256(JCS(checkout)))
     A->>CP: sign_mandate(CheckoutMandate) → SD-JWT+kb (aud=merchant, nonce=checkout)
+    A->>CP: sign_mandate(PaymentMandate) → SD-JWT+kb — POLICY GATE №2
     A->>M: complete_checkout(composite token, checkout_mandate)
     M->>PSP: lookup_agent — KYA gate (suspension / reputation)
     M->>M: verify SD-JWT+kb · own JWS · terms match
@@ -1837,7 +1837,7 @@ sequenceDiagram
     A->>CP: check_approval(checkout_id) → approved
     A->>CP: mint_instrument — autonomy gate WAIVED for this checkout
     CP-->>A: token (caps/budget/allowlist still enforced)
-    A->>CP: sign_mandate(Payment + Checkout)
+    A->>CP: sign_mandate(Checkout + Payment)
     Note over A: purchase completes via the normal flow (diagram 1, steps 17+)
     </pre>
   </div>
@@ -2931,9 +2931,17 @@ jwk       = profile.signing_keys.find(k => k.kid === "wavelength-2026")`,
               "autonomy": "human_present", "rail": "card_network" }
 }
 // Out of policy instead ⇒ error policy_cap_exceeded / policy_merchant_not_allowed (403)`},
- {t:'Sign mandates',tag:'ap2',s:'Touch ID → Payment + Checkout Mandates (GATE 2)',
-  d:`On confirmation the CP signs two mandates with the <b>user device key</b>. The <b>Payment Mandate</b> (<b>policy gate №2</b>) is bound to the checkout via <code>transaction_id = hash(checkout)</code>. The <b>Checkout Mandate</b> is a real <b>SD-JWT+kb</b> (CP-issued, key-bound to the device key, <code>aud</code> = merchant, <code>nonce</code> = checkout id, selective disclosure of the user id) embedding the full merchant-signed checkout — so the user's signature covers the merchant's. A passkey (Touch ID) over <code>SHA-256(JCS(checkout − ap2))</code> gates the signing.`,
-  reqL:'Request · two tools/call sign_mandate', req:`// ① Payment Mandate
+ {t:'Sign mandates',tag:'ap2',s:'Touch ID → Checkout + Payment Mandates (GATE 2)',
+  d:`On confirmation the CP issues two mandates, in the AP2 reference order — <b>Checkout Mandate first, then Payment Mandate</b> (both <code>chk_…</code> → <code>pay_…</code>, sharing the checkout hash). <b>Both are real <b>SD-JWT+kb</b> credentials</b>: CP-issued (issuer = CP service key), key-bound to the <b>user device key</b> (<code>aud</code> = merchant, <code>nonce</code> = checkout id). The <b>Checkout Mandate</b> embeds the full merchant-signed checkout — so the user's signature covers the merchant's — and selectively discloses the user id. The <b>Payment Mandate</b> (<b>policy gate №2</b>) is bound to the checkout via <code>transaction_id = hash(checkout)</code> and selectively discloses the <code>payment_instrument</code>. A passkey (Touch ID) over <code>SHA-256(JCS(checkout − ap2))</code> gates the signing.`,
+  reqL:'Request · two tools/call sign_mandate', req:`// ① Checkout Mandate  (SD-JWT+kb · gated by the passkey assertion)
+"arguments": {
+  "kind": "CheckoutMandate",
+  "payload": { "aud": "http://localhost:4101/m/wavelength/.well-known/ucp",
+               "nonce": "co_7f3a9c21d4", "human_present": true,
+               "checkout": { /* full merchant-signed checkout incl. ap2.merchant_authorization */ } },
+  "webauthn": { /* Touch ID assertion · challenge = SHA-256(JCS(checkout − ap2)), UV=1 */ }
+}
+// ② Payment Mandate  (SD-JWT+kb)
 "arguments": {
   "kind": "PaymentMandate",
   "payload": {
@@ -2945,24 +2953,17 @@ jwk       = profile.signing_keys.find(k => k.kid === "wavelength-2026")`,
     "payment_instrument": { "id": "instr_4291", "type": "card", "description": "visa ···· 4291" },
     "checkout_id": "co_7f3a9c21d4", "human_present": true
   }
-}
-// ② Checkout Mandate  (SD-JWT+kb)
-"arguments": {
-  "kind": "CheckoutMandate",
-  "payload": { "aud": "http://localhost:4101/m/wavelength/.well-known/ucp",
-               "nonce": "co_7f3a9c21d4", "human_present": true,
-               "checkout": { /* full merchant-signed checkout incl. ap2.merchant_authorization */ } },
-  "webauthn": { /* Touch ID assertion · challenge = SHA-256(JCS(checkout − ap2)), UV=1 */ }
 }`,
-  resL:'Response', res:`// ① Payment Mandate → signed by the user device key
-{ "jws": "eyJ…<payment_mandate>", "kid": "user-device-2026",
-  "format": "ap2-mandate+jwt", "approved_via": "device_biometric" }
-
-// ② Checkout Mandate → SD-JWT+kb (issuer JWT ~ sub disclosure ~ key-binding JWT)
+  resL:'Response', res:`// ① Checkout Mandate → SD-JWT+kb (issuer JWT ~ sub disclosure ~ key-binding JWT)
 { "jws": "eyJ…<issuer>~eyJ…<sub>~eyJ…<kb>", "kid": "walletly-issuer-2026",
-  "format": "dc+sd-jwt+kb",
+  "format": "dc+sd-jwt~kb",
   "approved_via": "passkey · platform · Touch ID (UV verified, challenge bound to checkout terms)",
-  "passkey_evidence": { "type": "webauthn", "uv": true } }`},
+  "passkey_evidence": { "type": "webauthn", "uv": true } }
+
+// ② Payment Mandate → SD-JWT+kb (issuer JWT ~ payment_instrument disclosure ~ key-binding JWT)
+//   issuer = CP service key; holder/key-binding = user device key (aud=payee, nonce=checkout)
+{ "jws": "eyJ…<issuer>~eyJ…<payment_instrument>~eyJ…<kb>", "kid": "walletly-issuer-2026",
+  "format": "dc+sd-jwt~kb", "approved_via": "device_biometric" }`},
  {t:'Complete checkout',tag:'ucp',s:'complete_checkout → verify chain → pay (GATE 3)',
   d:`The agent submits the composite credential (network token + payment mandate) plus the checkout mandate in <code>ap2</code>. The merchant runs the verification gauntlet (KYA → SD-JWT+kb → nested-binding self-check → terms match), then the <b>PSP independently re-verifies</b>, calls <code>release_credentials</code> (<b>policy gate №3</b>), authorizes and captures. The completion response is itself RFC 9421-signed over <code>@status</code>. (If the bank requires 3-D Secure, the response is <code>requires_escalation</code> + <code>continue_url</code> first.)`,
   reqL:'Request · tools/call complete_checkout', req:`"arguments": {
