@@ -904,79 +904,9 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
   const coJwt = checkoutJwt(co);
   const coHash = checkoutJwtHash(coJwt);
 
-  // --- Payment Mandate (AP2 mandate.payment.1; SD-JWT+kb). transaction_id =
-  //     hash(checkout_jwt) binds it to the signed checkout. ---
-  const pm: PaymentMandatePayload = {
-    type: "PaymentMandate",
-    vct: "mandate.payment.1",
-    id: randomId("pay"),
-    transaction_id: coHash,
-    payee: { id: mid, name: s.merchants[mid]?.name ?? mid, website: merchantProfileUrl(mid) },
-    payment_amount: { amount: total, currency: co.currency },
-    payment_instrument: {
-      id: `instr_${s.instrument?.last4 ?? "0000"}`,
-      type: "card",
-      description: `${s.instrument?.network ?? "card"} ···· ${s.instrument?.last4 ?? "0000"}`,
-    },
-    // Human-not-present: digest of the user-signed Open Payment Mandate this
-    // closed mandate satisfies (absent in the direct flow).
-    open_payment_mandate: humanPresent ? undefined : openMandateDigest(s.openPaymentMandate!.sdJwt),
-    checkout_id: co.id,
-    handler,
-    agent: AGENT_PROFILE_URL, // KYA: the PSP keys registry/velocity/reputation on this
-    rail,
-    authorized_by: humanPresent ? "device_biometric" : "agent_open_mandate",
-    human_present: humanPresent,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 15 * 60,
-    issued_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-  };
-  // Human-present → the user device key signs the closed Payment Mandate at the
-  // CP (biometric/passkey-gated). Human-not-present → the AGENT signs the closed
-  // (terminal) hop of a dSD-JWT chain whose ROOT is the user-signed Open Payment
-  // Mandate (cnf=agent); the terminal's `sd_hash` binds it to that root.
-  if (humanPresent) {
-    const pmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: pm }, identity);
-    s.paymentMandate = { id: pm.id, jws: pmSigned.jws, payload: pm };
-  } else {
-    s.occurrence = (s.occurrence ?? 0) + 1;
-    const term = issueDelegateTerminal(
-      { ...(pm as unknown as Record<string, unknown>), iss: AGENT_PROFILE_URL },
-      agentKey,
-      { sdJwt: s.openPaymentMandate!.sdJwt },
-      { aud: merchantProfileUrl(mid), nonce: co.id }
-    );
-    const chain = joinChain([s.openPaymentMandate!.segment, term.segment]);
-    s.paymentMandate = { id: pm.id, jws: chain, payload: pm };
-  }
-  emit(s, {
-    layer: "AP2",
-    kind: "mandate",
-    name: "Payment Mandate (closed · mandate.payment.1)",
-    method: humanPresent ? "SD-JWT+kb · ES256 · user device key" : "SD-JWT+kb · ES256 · AGENT key (open-mandate authority)",
-    desc: humanPresent
-      ? "Approved with the device biometric in the Google Pay sheet: authorizes exactly this amount to this merchant via this instrument. Travels to the PSP inside the composite token."
-      : "Signed autonomously by the agent under the user-signed Open Payment Mandate (cnf=agent key). Carries the open mandate digest; the PSP verifies it satisfies the open constraints (amount/budget/recurrence). Travels to the PSP inside the composite token.",
-    payload: pm,
-    mandate: {
-      kind: "Payment Mandate",
-      id: pm.id,
-      seal: humanPresent ? "user · biometric" : "agent · open mandate",
-      rows: [
-        ["handler", rail === "rtp" ? "RTP · instant bank transfer" : "Google Pay"],
-        ["rail", rail],
-        ["amount", money(total)],
-        ["payee", s.merchants[mid]?.name ?? mid],
-        humanPresent
-          ? (["authorized", "user device key"] as [string, string])
-          : (["satisfies open", (s.openPaymentMandate?.id ?? "").slice(0, 18) + "…"] as [string, string]),
-      ],
-      sig: (s.paymentMandate!.jws.split("~").pop() || s.paymentMandate!.jws).split(".")[2]?.slice(0, 42) ?? "",
-    },
-    _auto: true,
-  });
-
+  // AP2 reference order (per AP2/code/samples/python shopping_agent/agent.py
+  //   step 6a→6b): create the Checkout Mandate FIRST, then the Payment Mandate.
+  //   Both bind to checkout_jwt (coHash) computed above, not to each other.
   // --- Checkout Mandate: real SD-JWT+kb issued by the CP, key-bound to the
   //     user device key, audience = THIS merchant, nonce = checkout id. ---
   let cmSigned: any;
@@ -1052,6 +982,79 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
           : (["satisfies open", (s.openCheckoutMandate?.id ?? "").slice(0, 18) + "…"] as [string, string]),
       ],
       sig: (cmSigned.jws.split("~").pop() || "").split(".")[2]?.slice(0, 42) ?? "",
+    },
+    _auto: true,
+  });
+
+  // --- Payment Mandate (AP2 mandate.payment.1; SD-JWT+kb). transaction_id =
+  //     hash(checkout_jwt) binds it to the signed checkout. ---
+  const pm: PaymentMandatePayload = {
+    type: "PaymentMandate",
+    vct: "mandate.payment.1",
+    id: randomId("pay"),
+    transaction_id: coHash,
+    payee: { id: mid, name: s.merchants[mid]?.name ?? mid, website: merchantProfileUrl(mid) },
+    payment_amount: { amount: total, currency: co.currency },
+    payment_instrument: {
+      id: `instr_${s.instrument?.last4 ?? "0000"}`,
+      type: "card",
+      description: `${s.instrument?.network ?? "card"} ···· ${s.instrument?.last4 ?? "0000"}`,
+    },
+    // Human-not-present: digest of the user-signed Open Payment Mandate this
+    // closed mandate satisfies (absent in the direct flow).
+    open_payment_mandate: humanPresent ? undefined : openMandateDigest(s.openPaymentMandate!.sdJwt),
+    checkout_id: co.id,
+    handler,
+    agent: AGENT_PROFILE_URL, // KYA: the PSP keys registry/velocity/reputation on this
+    rail,
+    authorized_by: humanPresent ? "device_biometric" : "agent_open_mandate",
+    human_present: humanPresent,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 15 * 60,
+    issued_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+  };
+  // Human-present → the user device key signs the closed Payment Mandate at the
+  // CP (biometric/passkey-gated). Human-not-present → the AGENT signs the closed
+  // (terminal) hop of a dSD-JWT chain whose ROOT is the user-signed Open Payment
+  // Mandate (cnf=agent); the terminal's `sd_hash` binds it to that root.
+  if (humanPresent) {
+    const pmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: pm }, identity);
+    s.paymentMandate = { id: pm.id, jws: pmSigned.jws, payload: pm };
+  } else {
+    s.occurrence = (s.occurrence ?? 0) + 1;
+    const term = issueDelegateTerminal(
+      { ...(pm as unknown as Record<string, unknown>), iss: AGENT_PROFILE_URL },
+      agentKey,
+      { sdJwt: s.openPaymentMandate!.sdJwt },
+      { aud: merchantProfileUrl(mid), nonce: co.id }
+    );
+    const chain = joinChain([s.openPaymentMandate!.segment, term.segment]);
+    s.paymentMandate = { id: pm.id, jws: chain, payload: pm };
+  }
+  emit(s, {
+    layer: "AP2",
+    kind: "mandate",
+    name: "Payment Mandate (closed · mandate.payment.1)",
+    method: humanPresent ? "SD-JWT+kb · ES256 · user device key" : "SD-JWT+kb · ES256 · AGENT key (open-mandate authority)",
+    desc: humanPresent
+      ? "Approved with the device biometric in the Google Pay sheet: authorizes exactly this amount to this merchant via this instrument. Travels to the PSP inside the composite token."
+      : "Signed autonomously by the agent under the user-signed Open Payment Mandate (cnf=agent key). Carries the open mandate digest; the PSP verifies it satisfies the open constraints (amount/budget/recurrence). Travels to the PSP inside the composite token.",
+    payload: pm,
+    mandate: {
+      kind: "Payment Mandate",
+      id: pm.id,
+      seal: humanPresent ? "user · biometric" : "agent · open mandate",
+      rows: [
+        ["handler", rail === "rtp" ? "RTP · instant bank transfer" : "Google Pay"],
+        ["rail", rail],
+        ["amount", money(total)],
+        ["payee", s.merchants[mid]?.name ?? mid],
+        humanPresent
+          ? (["authorized", "user device key"] as [string, string])
+          : (["satisfies open", (s.openPaymentMandate?.id ?? "").slice(0, 18) + "…"] as [string, string]),
+      ],
+      sig: (s.paymentMandate!.jws.split("~").pop() || s.paymentMandate!.jws).split(".")[2]?.slice(0, 42) ?? "",
     },
     _auto: true,
   });
@@ -1878,9 +1881,9 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
       // Sign the mandates over the CURRENT, validly merchant-signed checkout…
       const co = s.checkout!;
       const total0 = totalOf(co);
+      const cmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, human_present: true, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id } }, identity);
       const cm = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: makePm(s) }, identity);
       s.paymentMandate = { id: cm.id, jws: cm.jws, payload: makePm(s) } as any;
-      const cmSigned = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, human_present: true, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id } }, identity);
       // …then ALTER THE CART AFTER SIGNING: selecting express shipping re-prices
       // and re-signs the live session, so the embedded (signed) checkout no longer
       // matches the live terms → the merchant's terms check rejects it.
@@ -1903,10 +1906,10 @@ async function runScenarioInner(s: Session, id: string): Promise<{ id: string; o
       await toCheckout(s);
       await preparePayment(s);
       const co = s.checkout!;
-      const pmE = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: makePm(s) }, identity);
-      s.paymentMandate = { id: pmE.id, jws: pmE.jws, payload: makePm(s) } as any;
       // Ask the CP to issue a properly-signed but already-EXPIRED checkout mandate.
       const expired = await callTool<any>(CP_MCP, "sign_mandate", { kind: "CheckoutMandate", payload: { checkout: co, human_present: true, aud: merchantProfileUrl(co.merchant_id!), nonce: co.id, exp_override: -3600 } }, identity);
+      const pmE = await callTool<any>(CP_MCP, "sign_mandate", { kind: "PaymentMandate", payload: makePm(s) }, identity);
+      s.paymentMandate = { id: pmE.id, jws: pmE.jws, payload: makePm(s) } as any;
       note("Submitting a checkout mandate whose exp is one hour in the past.");
       try {
         await callTool(s.merchantEndpoints[co.merchant_id!], "complete_checkout", { id: co.id, checkout: { payment: { instruments: [payInstrument(s)] }, ap2: { checkout_mandate: expired.jws } } }, identity);

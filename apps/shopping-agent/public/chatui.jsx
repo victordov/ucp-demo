@@ -111,4 +111,47 @@ function ProductResults({ products, merchants, onSelect, selected, meta, readOnl
   );
 }
 
-window.ChatUI = { Avatar, Bubble, Typing, ProductResults };
+/* welcome hero — the first thing the user sees */
+function WelcomeHero({ name, llmOn, llmChat, llmAgent, onSample, onScripted, onScenarios, onTrace }) {
+  const cards = [
+    {
+      key: "llm", ic: "chat", title: "LLM chat", on: llmChat && llmAgent,
+      desc: "A real LLM drives the chat — it searches, compares merchants, and asks before paying.",
+      cta: "Try a sample search", run: onSample,
+    },
+    {
+      key: "scr", ic: "code", title: "Scripted", on: !llmChat,
+      desc: "Deterministic flow — you click to pick merchant, shipping & payment. No API key needed.",
+      cta: llmChat ? "Switch to scripted" : "You're in scripted", run: onScripted,
+    },
+    {
+      key: "scn", ic: "layers", title: "Scenarios",
+      desc: "One-click automated demos covering success, failure & attack flows.",
+      cta: "Open scenarios", run: onScenarios,
+    },
+  ];
+  return (
+    <div className="welcome">
+      <div className="welcome-greet">
+        Hi {name} — I'm <b>Shoppy</b>, an agentic-commerce demo. Pick how you'd like to start:
+      </div>
+      <div className="welcome-cards">
+        {cards.map((c) => (
+          <button className="wcard" key={c.key} onClick={c.run}>
+            <div className={"wcard-ic " + c.key}><Icon name={c.ic} size={17} /></div>
+            <div className="wcard-title">{c.title}{c.on && <span className="wcard-on">ON</span>}</div>
+            <div className="wcard-desc">{c.desc}</div>
+            <div className="wcard-cta">{c.cta} <Icon name="chevR" size={14} /></div>
+          </button>
+        ))}
+      </div>
+      <div className="welcome-foot">
+        <Icon name="layers" size={14} style={{ color: "var(--muted)" }} />
+        <span>Everything you do shows up as real signed calls in the</span>
+        <button className="welcome-link" onClick={onTrace}>Protocol trace <Icon name="chevR" size={12} /></button>
+      </div>
+    </div>
+  );
+}
+
+window.ChatUI = { Avatar, Bubble, Typing, ProductResults, WelcomeHero };

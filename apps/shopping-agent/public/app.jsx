@@ -111,11 +111,7 @@ function App() {
         setAddress(a); setDraftAddr(a);
         await sleep(400);
         const llmOn = !!s.llm;
-        addBot(`Hi ${s.user.name.split(" ")[0]} — I'm <b>Shoppy</b>, an agentic-commerce demo. Ways to use me:<br/><br/>` +
-          `💬 <b>LLM chat${llmOn ? " (on)" : ""}</b> — ${llmOn ? "a <b>real LLM</b> is driving this chat. Just talk to me: I'll search, present options, and ask before paying. Try <i>“find ANC headphones under $300, 2-day”</i>, then <i>“buy the Cadence from Wavelength”</i>." : "set <code>OPENAI_API_KEY</code> or <code>ANTHROPIC_API_KEY</code> and restart to enable a real LLM here."}<br/>` +
-          `🛍 <b>Scripted</b> — toggle <b>📜 Scripted</b> by the composer for the deterministic flow where <b>you</b> click to pick merchant, shipping and payment (no API key needed).<br/>` +
-          `⚙️ <b>Scenarios</b> — one-click <b>automated demos</b> (success, failure &amp; attack flows) in the Scenarios panel.<br/><br/>` +
-          `Everything you do shows up as real signed calls in the <b>Protocol trace →</b>`);
+        addWelcome(s.user.name.split(" ")[0], llmOn);
       } catch (e) {
         addBot(`<b>Backend unreachable.</b> Start all services with <code>npm run dev</code> and reload. (${e.message})`);
       }
@@ -127,6 +123,7 @@ function App() {
   function addUser(text) { setMessages((m) => [...m, { id: nextUid(), role: "user", kind: "text", html: text }]); }
   function addBlock(kind) { setMessages((m) => [...m, { id: nextUid(), role: "bot", kind }]); }
   function addSnap(kind, snap, interactive) { setMessages((m) => [...m, { id: nextUid(), role: "bot", kind, snap, interactive }]); }
+  function addWelcome(name, llmOn) { setMessages((m) => [...m, { id: nextUid(), role: "bot", kind: "welcome", name, llmOn }]); }
   async function botType(ms = 600) { setTyping(true); await sleep(ms); setTyping(false); }
   function openTrace() { setTraceOpen(true); setTraceUnseen(0); }
   // Friendlier failures: protocol error codes become styled cards with a fix-it hint.
@@ -751,6 +748,13 @@ function App() {
     const text = input.trim();
     if (!text) return;
     setInput("");
+    submitText(text);
+  }
+  // Route a message through the right flow — shared by the composer and the
+  // welcome card's "try a sample search" CTA.
+  function submitText(text) {
+    text = (text || "").trim();
+    if (!text) return;
     // Human-not-present toggle takes precedence in EVERY mode (scripted or LLM
     // chat): it routes to the interactive authorize flow (merchants + payment).
     if (autonomous) { runAutonomousFlow(text); return; }
@@ -778,6 +782,10 @@ function App() {
     // mirroring real agentic checkouts (ChatGPT Instant Checkout, Apple/Google
     // Pay): the purchase controls don't stay live behind the receipt.
     const orderPlaced = phase === "paid" || phase === "done";
+    if (msg.kind === "welcome")
+      return <WelcomeHero name={msg.name} llmOn={msg.llmOn} llmChat={llmChat} llmAgent={llmAgent}
+        onSample={() => { if (!busy.current) submitText("find ANC headphones under $300, 2-day"); }}
+        onScripted={() => setLlmChat(false)} onScenarios={() => setScenOpen(true)} onTrace={openTrace} />;
     if (msg.kind === "products" && results)
       return <ProductResults products={results.products} merchants={results.merchants} onSelect={selectOffer} selected={selected} meta={results.meta} readOnly={orderPlaced} />;
     if (msg.kind === "checkout" && checkout) {
@@ -922,7 +930,7 @@ function App() {
             <div className="composer">
               <textarea
                 rows={1}
-                placeholder={llmChat && llmAgent ? "Chat with the LLM — e.g. “find me ANC headphones under $300”, then “buy the Cadence from Wavelength”…" : (phase === "intro" ? "Describe what you want, your budget, and constraints…" : "Message Shoppy…")}
+                placeholder={llmChat && llmAgent ? "Chat with the LLM — e.g. “find ANC headphones under $300, 2-day”…" : (phase === "intro" ? "Describe what you want, your budget, and constraints…" : "Message Shoppy…")}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -930,17 +938,19 @@ function App() {
               <button className="send" disabled={!input.trim()} onClick={handleSend}><Icon name="arrowUp" size={19} /></button>
             </div>
             <div className="composer-hint">
-              <span>{autonomous ? "Human-not-present — say what you want; I'll ask you to authorize merchants + a payment method once, then buy on my own (no card tap)" : (llmChat && llmAgent ? "Real LLM, step by step — it searches, presents options, and asks before paying" : "Scripted flow — deterministic, no API key needed")} · everything in the trace is real</span>
-              <button className={"mode-toggle " + (autonomous ? "on" : "")} title="Human-present (you approve & pay) vs human-not-present (agent buys autonomously under signed open mandates)"
-                onClick={() => { setAutonomous((v) => !v); }}>
-                <span className="dot" /> {autonomous ? "🤝 Human-not-present" : "🙋 Human-present"}
-              </button>
-              {llmAgent && (
-                <button className={"mode-toggle " + (llmChat ? "on" : "")} title="Toggle real LLM chat vs scripted flow"
-                  onClick={() => { setLlmChat((v) => !v); }}>
-                  <span className="dot" /> {llmChat ? "🤖 LLM chat" : "📜 Scripted"}
+              <span className="hint-text">{autonomous ? "Human-not-present — say what you want; I'll ask you to authorize merchants + a payment method once, then buy on my own (no card tap)" : (llmChat && llmAgent ? "Real LLM, step by step — it searches, presents options, and asks before paying" : "Scripted flow — deterministic, no API key needed")} · everything in the trace is real</span>
+              <div className="composer-toggles">
+                <button className={"mode-toggle " + (autonomous ? "on" : "")} title="Human-present (you approve & pay) vs human-not-present (agent buys autonomously under signed open mandates)"
+                  onClick={() => { setAutonomous((v) => !v); }}>
+                  <span className="dot" /> {autonomous ? "🤝 Human-not-present" : "🙋 Human-present"}
                 </button>
-              )}
+                {llmAgent && (
+                  <button className={"mode-toggle " + (llmChat ? "on" : "")} title="Toggle real LLM chat vs scripted flow"
+                    onClick={() => { setLlmChat((v) => !v); }}>
+                    <span className="dot" /> {llmChat ? "🤖 LLM chat" : "📜 Scripted"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -963,8 +973,12 @@ function App() {
         )}
       </main>
 
-      {/* inspector */}
-      {traceOpen && <Inspector events={trace} onClose={() => setTraceOpen(false)} />}
+      {/* inspector — slide-in overlay (click-away to close) */}
+      {traceOpen && (
+        <div className="insp-scrim" onClick={(e) => { if (e.target === e.currentTarget) setTraceOpen(false); }}>
+          <Inspector events={trace} onClose={() => setTraceOpen(false)} />
+        </div>
+      )}
 
       {/* tweaks */}
       <TweaksPanel>
