@@ -252,7 +252,7 @@ async function tracedTool<T = any>(
         signed_headers: {
           "UCP-Agent": recorded?.headers["UCP-Agent"],
           "Signature-Input": recorded?.headers["Signature-Input"],
-          Signature: truncate(recorded?.headers["Signature"], 60),
+          Signature: recorded?.headers["Signature"],
           "Content-Digest": recorded?.headers["Content-Digest"],
           "Idempotency-Key": recorded?.headers["Idempotency-Key"],
         },
@@ -660,7 +660,7 @@ async function verifyAndTraceMerchantAuth(s: Session, co: Checkout, mid: string,
     desc: `${context} — the platform MUST verify the business's detached JWS over the JCS-canonicalized checkout (excluding ap2) before showing it to the user. Key resolved from ${merchantProfileUrl(mid)}.`,
     payload: {
       checkout_id: co.id,
-      merchant_authorization: truncate(co.ap2?.merchant_authorization, 80),
+      merchant_authorization: co.ap2?.merchant_authorization,
       verified: v.ok,
       kid: v.kid,
       ...(v.error ? { error: v.error } : {}),
@@ -967,7 +967,7 @@ export async function confirmAndPay(s: Session, opts: { humanPresent?: boolean; 
     desc: humanPresent
       ? "A real SD-JWT+kb verifiable credential: the CP issues it (issuer signature), it is KEY-BOUND to the user's device key (the holder signs a key-binding JWT over aud=merchant + nonce=checkout id), and it embeds the FULL merchant-signed checkout. Selective disclosure reveals the user id but withholds the email. Required by the merchant at complete_checkout."
       : "Signed autonomously by the agent (issuer=holder=agent key) under the user-signed Open Checkout Mandate (cnf=agent key). Bound to aud=merchant + nonce=checkout id, it embeds the FULL merchant-signed checkout and the open mandate digest. The merchant verifies it satisfies the open constraints (allowed_merchants + line_items).",
-    payload: { format: cmSigned.format, embedded_checkout_id: co.id, aud: merchantProfileUrl(mid), nonce: co.id, open_checkout_mandate: humanPresent ? undefined : s.openCheckoutMandate?.id, presentation: truncate(cmSigned.jws, 120) },
+    payload: { format: cmSigned.format, embedded_checkout_id: co.id, aud: merchantProfileUrl(mid), nonce: co.id, open_checkout_mandate: humanPresent ? undefined : s.openCheckoutMandate?.id, presentation: cmSigned.jws },
     mandate: {
       kind: "Checkout Mandate",
       id: cmSigned.id,
@@ -1097,7 +1097,7 @@ export async function resolveThreeDs(s: Session, opts: { outcome?: string } = {}
     desc: outcome === "success"
       ? "The user completed Strong Customer Authentication on the bank's page; the Credentials Provider returns an attestation the PSP trusts, so the retry succeeds without a second challenge."
       : "The user cancelled the bank challenge — no attestation was issued and the payment was not completed.",
-    payload: { challenge_id: challengeId, outcome: att.outcome, attestation: truncate(att.attestation, 24) },
+    payload: { challenge_id: challengeId, outcome: att.outcome, attestation: att.attestation },
     mandate: outcome === "success"
       ? { kind: "3DS Attestation", id: challengeId, seal: "user · 3DS", rows: [["outcome", att.outcome], ["attestation", truncate(att.attestation, 20) ?? "—"]], sig: (att.attestation ?? "").slice(0, 20) }
       : undefined,
@@ -1217,7 +1217,7 @@ async function submitComplete(s: Session, opts: { humanPresent: boolean; interac
       layer: "AP2", kind: "mandate", name: "3-D Secure attestation",
       method: "user · biometric on bank surface",
       desc: "The user completed the challenge; the Credentials Provider returns an attestation the PSP trusts, so the retry succeeds without a second challenge.",
-      payload: { challenge_id: challengeId, outcome: att.outcome, attestation: truncate(att.attestation, 24) },
+      payload: { challenge_id: challengeId, outcome: att.outcome, attestation: att.attestation },
       mandate: { kind: "3DS Attestation", id: challengeId, seal: "user · 3DS", rows: [["outcome", att.outcome], ["attestation", truncate(att.attestation, 20) ?? "—"]], sig: (att.attestation ?? "").slice(0, 20) },
       _auto: true,
     });
@@ -1361,7 +1361,7 @@ export async function linkAccount(s: Session, merchantId: string): Promise<{ lin
     layer: "UCP", kind: "response", name: "Identity Linking · access token",
     method: "POST /oauth/token",
     desc: "The authorization code was exchanged for a scoped access token. The agent can now read the user's order history.",
-    payload: { token_type: tok.token_type, scope: tok.scope, expires_in: tok.expires_in, access_token: truncate(tok.access_token, 16) },
+    payload: { token_type: tok.token_type, scope: tok.scope, expires_in: tok.expires_in, access_token: tok.access_token },
   });
   return { linked: !!tok.access_token, scope: tok.scope };
 }
