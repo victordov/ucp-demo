@@ -1188,6 +1188,7 @@ function McpPanel({ data, onClose, onRefresh }) {
                 <div className="mcp-tools">
                   {s.tools.map((t) => {
                     const pp = toolParams(t.inputSchema);
+                    const outRef = t.outputSchema && t.outputSchema.$ref;
                     return (
                       <div className="mcp-tool" key={t.name}>
                         <div className="mcp-tool-head">
@@ -1209,6 +1210,17 @@ function McpPanel({ data, onClose, onRefresh }) {
                               {p.desc && <span className="mcp-pdesc">{p.desc}</span>}
                             </div>
                           ))}
+                        </div>
+                        <div className="mcp-returns">
+                          {outRef
+                            ? <span className="mcp-pref">returns&nbsp;<a href={t.outputSchema.$ref} target="_blank" rel="noreferrer">{refShort(outRef)}</a></span>
+                            : (t.example === undefined && <span className="mcp-noparam">response: see protocol trace</span>)}
+                          {t.example !== undefined && (
+                            <details className="mcp-example">
+                              <summary>example response</summary>
+                              <pre>{JSON.stringify(t.example, null, 2)}</pre>
+                            </details>
+                          )}
                         </div>
                       </div>
                     );

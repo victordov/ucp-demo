@@ -631,6 +631,13 @@ button:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 
 .mcp-pref{font-size:10.5px;color:var(--muted,#667085)}
 .mcp-pref a{font-family:'IBM Plex Mono',monospace;color:var(--accent,#4f46e5);text-decoration:none}
 .mcp-pref a:hover{text-decoration:underline}
+.mcp-returns{margin:6px 0 0 10px;padding-left:10px;border-left:2px solid var(--accent-soft,#e8eaff)}
+.mcp-example{margin-top:5px}
+.mcp-example summary{font-size:10.5px;font-weight:600;color:var(--accent,#4f46e5);cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px;user-select:none}
+.mcp-example summary::-webkit-details-marker{display:none}
+.mcp-example summary::before{content:"▸";font-size:9px}
+.mcp-example[open] summary::before{content:"▾"}
+.mcp-example pre{margin:6px 0 0;background:var(--code-bg,#0f172a);color:#cbd5e1;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.45;overflow:auto;font-family:'IBM Plex Mono',monospace;max-height:300px}
 @media (max-width:560px){.mcp-tool-head{grid-template-columns:1fr}}
 
 /* LLM-chat mode toggle + compact checkout card */

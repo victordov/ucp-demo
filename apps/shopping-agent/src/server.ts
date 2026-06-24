@@ -362,6 +362,39 @@ async function listMcpTools(endpoint: string): Promise<{ ok: boolean; tools: any
   }
 }
 
+// Representative example responses for tools that don't declare an outputSchema
+// (the bespoke wallet/PSP tools + a few merchant post-order tools). Tools that DO
+// declare an outputSchema show that schema link instead. Shapes mirror the actual
+// handler return values; amounts are minor units. Keyed by tool name (only attached
+// to a tool when it has no outputSchema, so the shared get_product name is safe).
+const RESPONSE_EXAMPLES: Record<string, unknown> = {
+  // Shopping Agent
+  get_product: { product: { id: "halo-studio-nc", title: "Halo Studio NC", merchant_id: "wavelength", price: { amount: 29900, currency: "USD" }, available: true } },
+  // Merchant Portal (post-order)
+  list_orders: { ucp: { version: UCP_VERSION, capabilities: { "dev.ucp.common.identity_linking": [{ version: UCP_VERSION }] } }, orders: [{ id: "ord_7f3a9c", status: "shipped", total: 31837, currency: "USD", permalink_url: "http://localhost:4101/m/wavelength/orders/ord_7f3a9c", created_at: "2026-06-24T10:15:00.000Z" }] },
+  refund_order: { order: { id: "ord_7f3a9c", status: "partially_refunded", adjustments: [{ id: "adj_9d2f10ab", type: "refund", amount: { type: "total", amount: -3184, display_text: "Refund" }, reason: "late_delivery", psp_refund_id: "rfnd_5c1a" }] } },
+  file_dispute: { order: { id: "ord_7f3a9c", status: "disputed", adjustments: [{ id: "adj_4b7e22cd", type: "dispute", reason: "item_not_as_described", evidence: { checkout_mandate_present: true, open_checkout_mandate_present: false, payment_mandate_present: true } }] } },
+  // Credentials Provider (Walletly)
+  list_payment_methods: { user: { name: "Alex Morgan", email: "alex@example.com" }, payment_methods: [{ id: "pm_visa_4291", type: "card", network: "visa", last4: "4291", handlers: ["com.google.pay"] }, { id: "pm_rtp_6610", type: "bank_account", rail: "rtp", last4: "6610", handlers: ["com.paystream.rtp"] }] },
+  mint_instrument: { instrument: { type: "network_token", token: "ntk_3f9c8a21", network: "visa", last4: "4291", single_use: true, cryptogram: "AghQ4eY2…", rail: "card_network" }, handler: "com.google.pay", policy: { per_tx_cap: 200000, budget: 500000, spent: 0, merchants_allowed: ["wavelength", "soundhub", "electromart", "audionest"], autonomy: "human_present", rail: "card_network" } },
+  sign_mandate: { jws: "eyJ…<issuer>~eyJ…<sub>~eyJ…<kb>", kid: "walletly-issuer-2026", kind: "CheckoutMandate", id: "comandate_a1b2c3", format: "dc+sd-jwt~kb", approved_via: "passkey · platform · Touch ID (UV verified)", passkey_evidence: { type: "webauthn", uv: true } },
+  get_agent_policy: { policy: { autonomy: "human_present", per_tx_cap: 200000, budget: 500000, spent: 0, merchants_allowed: ["wavelength", "soundhub", "electromart", "audionest"], rail: "card_network", valid_from: "2026-06-01T00:00:00.000Z", valid_until: "2026-12-31T23:59:59.000Z" } },
+  request_approval: { approval_id: "appr_7c2e9f", status: "pending" },
+  check_approval: { approval_id: "appr_7c2e9f", status: "approved", decided_at: "2026-06-24T10:12:30.000Z" },
+  passkey_status: { enabled: true, enrolled: false, rp_id: "localhost", credential_id: null, user: { id: "user_alex", name: "Alex Morgan" } },
+  passkey_register_options: { options: { challenge: "q1w2e3…", rp: { id: "localhost", name: "Walletly" }, user: { id: "dXNlcl9hbGV4", name: "alex@example.com", displayName: "Alex Morgan" }, pubKeyCredParams: [{ alg: -7, type: "public-key" }], authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" } } },
+  passkey_register: { enrolled: true, credential_id: "Aa1Bb2Cc3…", rp_id: "localhost" },
+  passkey_auth_options: { rp_id: "localhost", uv_challenge: "b64u(SHA-256(JCS(checkout)))", options: { challenge: "b64u(SHA-256(JCS(checkout)))", allowCredentials: [{ id: "Aa1Bb2Cc3…", type: "public-key" }], userVerification: "required" }, payment: { credential_id: "Aa1Bb2Cc3…", last4: "4291", network: "visa" } },
+  release_credentials: { credentials: { pan_ref: "pan_8821", network: "visa", last4: "4291", exp: "12/29" }, behavior: "approve", context: { checkout_id: "co_7f3a9c21d4" }, policy: { per_tx_cap: 200000, budget: 500000, spent: 0 }, rail: "card_network" },
+  resolve_challenge: { challenge_id: "3ds_a91c", outcome: "success", attestation: "3ds_att_5f1c9e2b7a", attested_at: "2026-06-24T10:13:05.000Z" },
+  // Payment Provider (PayStream) — authorize returns either authorized or requires_challenge (3-DS)
+  authorize_payment: { transaction_id: "txn_5c1a9e3f", status: "authorized", amount: 31837, currency: "USD", rail: "card_network", agent: AGENT_PROFILE_URL, mandate_verification: { signature: "valid SD-JWT+kb (issuer kid=walletly-issuer-2026, key-bound to user device)", kya: "active · reputation 72", velocity: "ok", scope: "amount/payee/checkout/expiry ok" }, agent_presence: { ai_agent_involved: true, modality: "human_present" } },
+  capture_payment: { transaction_id: "txn_5c1a9e3f", status: "captured", captured_at: "2026-06-24T10:14:00.000Z", rail: "card_network" },
+  refund_payment: { transaction_id: "txn_5c1a9e3f", refund_id: "rfnd_5c1a", amount: { amount: 3184, currency: "USD" }, status: "partially_refunded", total_refunded: 3184 },
+  lookup_agent: { registered: true, profile_url: AGENT_PROFILE_URL, name: "Shoppy", kya_level: "verified", status: "active", reputation: 72, registered_at: "2026-06-01T00:00:00.000Z" },
+  get_payment: { transaction_id: "txn_5c1a9e3f", status: "captured", amount: 31837, currency: "USD", refunded: 0, merchant_id: "wavelength", network: "visa", last4: "4291", rail: "card_network", agent: AGENT_PROFILE_URL, payment_mandate_id: "pay_9b2d", agent_presence: { ai_agent_involved: true, modality: "human_present" } },
+};
+
 api.get("/mcp", async (_req, res) => {
   const apps = [
     { app: "Shopping Agent", role: "UCP Platform / AP2 Shopping Agent — “Shoppy”", port: PORTS.shoppingAgent, endpoints: [`${URLS.shoppingAgent}/mcp`] },
@@ -370,8 +403,16 @@ api.get("/mcp", async (_req, res) => {
     { app: "Payment Provider", role: "PSP / AP2 Merchant Payment Processor — “PayStream”", port: PORTS.paymentProvider, endpoints: [`${URLS.paymentProvider}/mcp`] },
   ];
   // Multi-tenant endpoints of one app share the same tool set — probe the first.
+  // Attach a curated example response to any tool that doesn't declare an outputSchema.
   const servers = await Promise.all(
-    apps.map(async (a) => ({ ...a, ...(await listMcpTools(a.endpoints[0])) }))
+    apps.map(async (a) => {
+      const r = await listMcpTools(a.endpoints[0]);
+      const tools = r.tools.map((t: any) => ({
+        ...t,
+        example: !t.outputSchema && RESPONSE_EXAMPLES[t.name] !== undefined ? RESPONSE_EXAMPLES[t.name] : undefined,
+      }));
+      return { ...a, ...r, tools };
+    })
   );
   res.json({ servers });
 });
