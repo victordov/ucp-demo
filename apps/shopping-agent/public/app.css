@@ -617,11 +617,21 @@ button:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 
 .mcp-endpoints code{font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:var(--accent-soft,#f3f4ff);color:var(--accent,#4f46e5);border-radius:6px;padding:2px 7px}
 .mcp-note{font-size:10.5px;color:var(--muted,#9aa3b2);font-style:italic}
 .mcp-err{font-size:11.5px;color:#b91c1c;background:#fef2f2;border:1px dashed #fecaca;border-radius:8px;padding:6px 9px;margin-top:6px}
-.mcp-tools{margin-top:8px;border-top:1px solid var(--line,#eef0f3);padding-top:8px;display:flex;flex-direction:column;gap:7px}
-.mcp-tool{display:grid;grid-template-columns:160px 1fr;gap:10px;align-items:baseline}
-.mcp-tool code{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:var(--ink,#111827);word-break:break-word}
-.mcp-tool span{font-size:11.5px;color:var(--muted,#667085);line-height:1.4}
-@media (max-width:560px){.mcp-tool{grid-template-columns:1fr}}
+.mcp-tools{margin-top:8px;border-top:1px solid var(--line,#eef0f3);padding-top:8px;display:flex;flex-direction:column;gap:11px}
+.mcp-tool-head{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:baseline}
+.mcp-tool-head code{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:var(--ink,#111827);word-break:break-word}
+.mcp-tool-head span{font-size:11.5px;color:var(--muted,#667085);line-height:1.4}
+.mcp-params{margin:5px 0 0 10px;padding-left:10px;border-left:2px solid var(--line,#eef0f3);display:flex;flex-direction:column;gap:4px}
+.mcp-param{display:flex;flex-wrap:wrap;gap:7px;align-items:baseline}
+.mcp-pname{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--accent,#4f46e5)}
+.mcp-ptype{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#0f766e;background:#f0fdfa;border:1px solid #ccecea;border-radius:5px;padding:0 5px}
+.mcp-req{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:0 5px}
+.mcp-pdesc{font-size:11px;color:var(--muted,#667085);line-height:1.35;flex:1 1 100%;margin-left:2px}
+.mcp-noparam{font-size:10.5px;color:var(--muted,#9aa3b2);font-style:italic}
+.mcp-pref{font-size:10.5px;color:var(--muted,#667085)}
+.mcp-pref a{font-family:'IBM Plex Mono',monospace;color:var(--accent,#4f46e5);text-decoration:none}
+.mcp-pref a:hover{text-decoration:underline}
+@media (max-width:560px){.mcp-tool-head{grid-template-columns:1fr}}
 
 /* LLM-chat mode toggle + compact checkout card */
 .composer-hint{display:flex;align-items:center;justify-content:space-between;gap:10px}

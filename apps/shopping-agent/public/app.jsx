@@ -1116,8 +1116,42 @@ function ScenarioPanel({ scenarios, running, result, llmAgent, passkeyEnrolled, 
   );
 }
 
+// Shorten a JSON-Schema $ref (https://ucp.dev/…/shopping/checkout.json#/$defs/x → checkout.json#x)
+function refShort(ref) {
+  if (!ref) return "";
+  const [u, frag] = String(ref).split("#");
+  const file = u.split("/").pop();
+  return file + (frag ? "#" + frag.replace(/^\/\$defs\//, "") : "");
+}
+function paramType(p) {
+  if (!p || typeof p !== "object") return "any";
+  if (p.$ref) return refShort(p.$ref);
+  if (p.enum) return "enum";
+  if (Array.isArray(p.type)) return p.type.join(" | ");
+  if (p.type === "array") return "array" + (p.items && p.items.type ? "<" + p.items.type + ">" : "");
+  return p.type || (p.properties ? "object" : "any");
+}
+// Normalize a tool inputSchema into a renderable parameter view.
+function toolParams(schema) {
+  if (!schema || typeof schema !== "object") return { kind: "none" };
+  if (schema.$ref) return { kind: "ref", ref: schema.$ref };
+  const props = schema.properties;
+  if (props && Object.keys(props).length) {
+    const req = new Set(schema.required || []);
+    return {
+      kind: "props",
+      list: Object.keys(props).map((n) => ({
+        name: n, type: paramType(props[n]), required: req.has(n),
+        desc: (props[n] && props[n].description) || "",
+      })),
+    };
+  }
+  return { kind: "none" };
+}
+
 // MCP explorer — lists each application's MCP endpoint(s) and the tools it exposes
-// (fetched server-side from every service's `tools/list`). Mirrors the ScenarioPanel layout.
+// (fetched server-side from every service's `tools/list`), with each tool's parameters.
+// Mirrors the ScenarioPanel layout.
 function McpPanel({ data, onClose, onRefresh }) {
   const servers = (data && data.servers) || [];
   const totalTools = servers.reduce((n, s) => n + (s.ok ? s.tools.length : 0), 0);
@@ -1152,12 +1186,33 @@ function McpPanel({ data, onClose, onRefresh }) {
               {!s.ok && s.error && <div className="mcp-err">⚠ {s.error}</div>}
               {s.ok && (
                 <div className="mcp-tools">
-                  {s.tools.map((t) => (
-                    <div className="mcp-tool" key={t.name}>
-                      <code>{t.name}</code>
-                      <span>{t.description}</span>
-                    </div>
-                  ))}
+                  {s.tools.map((t) => {
+                    const pp = toolParams(t.inputSchema);
+                    return (
+                      <div className="mcp-tool" key={t.name}>
+                        <div className="mcp-tool-head">
+                          <code>{t.name}</code>
+                          <span>{t.description}</span>
+                        </div>
+                        <div className="mcp-params">
+                          {pp.kind === "none" && <span className="mcp-noparam">no parameters</span>}
+                          {pp.kind === "ref" && (
+                            <span className="mcp-pref">params defined by schema&nbsp;
+                              <a href={pp.ref} target="_blank" rel="noreferrer">{refShort(pp.ref)}</a>
+                            </span>
+                          )}
+                          {pp.kind === "props" && pp.list.map((p) => (
+                            <div className="mcp-param" key={p.name}>
+                              <code className="mcp-pname">{p.name}</code>
+                              <span className="mcp-ptype">{p.type}</span>
+                              {p.required && <span className="mcp-req">required</span>}
+                              {p.desc && <span className="mcp-pdesc">{p.desc}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
