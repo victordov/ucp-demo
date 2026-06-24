@@ -2412,6 +2412,45 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
     <p style="font-size:13px;color:var(--muted)">The PSP verifies it with the same SD-JWT+kb machinery as the checkout mandate (<code>sdJwtVerify</code>), then re-checks vct, transaction_id, amount, payee and expiry before pulling credentials.</p>
   </div>
 
+  <div class="card" id="sdjwt">
+    <h3 style="margin-top:0">Why SD-JWT+kb? — issuer/holder split, key binding, selective disclosure</h3>
+    <p style="font-size:14px">Both user mandates are <b>SD-JWT+kb</b> verifiable credentials (IETF
+    <code>draft-ietf-oauth-selective-disclosure-jwt</code>), serialized
+    <code>&lt;issuer-jwt&gt;~&lt;disclosure&gt;~…~&lt;kb-jwt&gt;</code> (see <code>packages/common/src/sdjwt.ts</code>). A plain JWS
+    would sign the claims — but it can't separate <i>who attests</i> from <i>who holds</i>, can't be sender-constrained
+    to one recipient, and can't hide a field from one verifier while revealing it to another. SD-JWT+kb buys four
+    properties we actually rely on:</p>
+    <div class="kv">
+      <span class="k">issuer ≠ holder</span><span>The <b>Credentials Provider</b> (Walletly) is the <b>issuer</b> — it signs the credential with its service key. The <b>user's device key</b> is the <b>holder</b>, bound into the issuer JWT as <code>cnf.jwk</code>. This is the real wallet model: a trusted provider attests, the user's device proves possession.</span>
+      <span class="k">key binding (anti-replay)</span><span>To present, the holder appends a <b>Key-Binding JWT</b> (<code>typ=kb+jwt</code>) signed by the device key over <code>{ iat, aud, nonce, sd_hash }</code>: <code>aud</code> = merchant/payee profile, <code>nonce</code> = checkout id, <code>sd_hash</code> = a digest of the exact disclosed presentation. A captured mandate cannot be replayed at another merchant, for another checkout, or with its disclosure set altered.</span>
+      <span class="k">selective disclosure</span><span>Claims issued as hidden digests (<code>_sd</code>) can be revealed per presentation; each verifier sees only what it needs and the rest stays a digest — privacy without a second credential.</span>
+      <span class="k">durable dispute evidence</span><span>The credential is self-contained and independently verifiable months later (issuer signature + holder binding + the disclosures revealed) — exactly what an adjudicator needs in <code>file_dispute</code>.</span>
+    </div>
+
+    <p style="font-size:13.5px;margin:14px 0 6px"><b>Where we use it (use cases)</b></p>
+    <table>
+      <thead><tr><th>Credential</th><th>vct · format</th><th>issuer → holder</th><th>aud · nonce</th><th>verified by</th></tr></thead>
+      <tbody>
+        <tr><td><b>Checkout Mandate</b><br/>closed · human-present</td><td><code>mandate.checkout.1</code><br/><code>dc+sd-jwt~kb</code></td><td>CP service key → user device key</td><td>merchant profile · checkout id</td><td>Merchant</td></tr>
+        <tr><td><b>Payment Mandate</b><br/>closed · human-present</td><td><code>mandate.payment.1</code><br/><code>dc+sd-jwt~kb</code></td><td>CP service key → user device key</td><td>payee profile · checkout id</td><td>PSP</td></tr>
+        <tr><td><b>Open Checkout / Payment Mandate</b><br/>human-not-present</td><td><code>mandate.*.open.1</code><br/><code>dc+sd-jwt (root)</code></td><td>user device key → <code>cnf</code> = agent key</td><td>set on the agent-signed terminal hop</td><td>Merchant · PSP</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin-top:8px">For human-not-present, the open mandates are the <b>root</b> of a delegated SD-JWT (dSD-JWT) chain: the user device key signs the conditions with the <i>agent</i> key as <code>cnf</code>, and the agent later signs the closed terminal hop under that authority (<code>sd_hash</code> binds terminal → root).</p>
+
+    <p style="font-size:13.5px;margin:14px 0 6px"><b>What we selectively disclose</b></p>
+    <table>
+      <thead><tr><th>Credential</th><th>disclosable claims</th><th>revealed by default</th><th>withheld</th></tr></thead>
+      <tbody>
+        <tr><td>Checkout Mandate</td><td><code>sub</code> (user id), <code>buyer_email</code></td><td><code>sub</code> — the customer id the merchant legitimately needs</td><td><code>buyer_email</code> — the merchant fulfils the order without learning the user's email (revealed only if <code>reveal</code> asks for it)</td></tr>
+        <tr><td>Payment Mandate</td><td><code>payment_instrument</code></td><td><code>payment_instrument</code> — to the PSP, the only party that needs the instrument descriptor</td><td>absent from the always-signed claims, so it never appears unless disclosed</td></tr>
+        <tr><td>Open Checkout Mandate</td><td><code>allowed</code> (allowed_merchants), <code>acceptable_items</code></td><td>per presentation</td><td>—</td></tr>
+        <tr><td>Open Payment Mandate</td><td><code>allowed</code> (amount_range / reference)</td><td>per presentation</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin-top:8px">Disclosure is enforced cryptographically by <code>sdJwtVerify</code>: a disclosure whose digest is not in <code>_sd</code> is rejected as tampering, and the KB-JWT's <code>sd_hash</code> pins the exact set that was presented (you can't add or drop a disclosure after issuance).</p>
+  </div>
+
   <div class="card">
     <h3 style="margin-top:0">Signed receipts close the loop</h3>
     <p style="font-size:14px">On success each verifier returns a <b>signed AP2 receipt</b> (compact JWS, <code>typ=ap2-receipt+jwt</code>), so both
@@ -2446,6 +2485,35 @@ intersection(wavelength) = [checkout, catalog.search, order, fulfillment, ap2_ma
       <span class="k">not enrolled</span><span>Falls back to the simulated approval — casual users are never blocked. The 3-D Secure step-up can reuse the same passkey prompt.</span>
       <span class="k">evidence</span><span>The verified assertion (UV, credential id, bound challenge) is stored with the order as additional dispute evidence. Disable with <code>PASSKEYS=0</code>.</span>
     </div>
+  </div>
+
+  <div class="card" id="iframes">
+    <h3 style="margin-top:0">The wallet &amp; 3-D Secure iframes — origin-isolated payment surfaces</h3>
+    <p style="font-size:14px">Two services render <b>sandboxed cross-origin iframes</b> that the Shopping Agent embeds — the
+    Google-Pay-style isolation pattern. The agent page never draws the payment surface or runs the credential ceremony
+    itself; it only brokers non-sensitive data over <code>postMessage</code>, origin-pinned in both directions
+    (<code>WalletSheetFrame</code> / <code>ThreeDSModal</code> in <code>public/checkout.jsx</code>).</p>
+    <table>
+      <thead><tr><th>Served by</th><th>Surface</th><th>What runs inside</th><th>Why it must be its own origin</th></tr></thead>
+      <tbody>
+        <tr><td><b>Credentials Provider</b><br/>Walletly · :4102</td><td><code>/sheet.html</code><br/>wallet payment sheet</td><td>The WebAuthn / Secure Payment Confirmation ceremony (<code>navigator.credentials.get()</code> → Touch ID) and the payment-method picker.</td><td>The passkey is scoped to the <b>wallet's RP ID</b>, so the assertion can only be produced on the wallet origin. The card PAN + cryptogram never enter the agent or merchant DOM — only a WebAuthn <b>assertion</b> leaves the iframe.</td></tr>
+        <tr><td><b>Payment Provider</b><br/>PayStream · :4103</td><td><code>/challenge/:id</code><br/>3-D Secure step-up</td><td>The issuer's Strong-Customer-Authentication challenge (a simulated bank surface).</td><td>The bank authentication happens on the <b>bank / PSP origin</b>; the agent only ever sees the pass/fail outcome, never the user's bank credentials.</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13.5px;margin:14px 0 6px"><b>How the wallet sheet is locked down</b></p>
+    <div class="kv">
+      <span class="k">iframe attributes</span><span>The agent embeds <code>{walletOrigin}/sheet.html</code> with <code>allow="payment; publickey-credentials-get; publickey-credentials-create"</code> and <code>sandbox="allow-scripts allow-popups allow-same-origin allow-forms"</code>.</span>
+      <span class="k">Permissions-Policy (delegation)</span><span>The agent sends <code>Permissions-Policy: payment=(self "{wallet}"), publickey-credentials-get/create=(self "{wallet}")</code> — these powerful features are delegated <b>only</b> to the wallet origin. The effective permission is the <b>intersection</b> of this header and the iframe's <code>allow</code>.</span>
+      <span class="k">framing control (CSP)</span><span>The CP serves the sheet with <code>Content-Security-Policy: frame-ancestors {agent-origin}</code> — only the Shopping Agent may frame it — while the Walletly dashboard itself refuses framing with <code>frame-ancestors 'none'</code>.</span>
+      <span class="k">message pinning</span><span>Every <code>postMessage</code> is origin-pinned: the agent only accepts from / sends to the wallet origin, and the sheet pins to the injected <code>AGENT_ORIGIN</code> (served by <code>/sheet-config.js</code>). Channel: child→parent <code>wallet.ready · resize · close · confirm · change_method · enroll · enrolled</code>; parent→child <code>wallet.init · update · enroll_options · error</code>.</span>
+    </div>
+    <p style="font-size:13.5px;margin:14px 0 6px"><b>How this connects to MCP</b></p>
+    <p style="font-size:13.5px">The iframe documents are static surfaces, but the MCP tools <b>drive</b> them. The wallet sheet calls the
+    Credentials Provider's <code>passkey_register_options</code> / <code>passkey_auth_options</code> (whose
+    <code>uv_challenge = SHA-256(JCS(checkout − ap2))</code>) and hands the resulting assertion to <code>sign_mandate</code>.
+    The 3-D Secure iframe is opened straight from a <b>tool response</b>: the PSP's <code>authorize_payment</code> returns
+    <code>status: "requires_challenge"</code> with a <code>continue_url</code>, the page posts <code>threeds.result</code> back, and
+    the agent resolves it (<code>resolve_challenge</code> at the CP) and retries authorization server-side.</p>
   </div>
 
   <details><summary>The complete verification gauntlet at <code>complete_checkout</code></summary><div class="body">
