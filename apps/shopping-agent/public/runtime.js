@@ -73,6 +73,8 @@ window.ShoppyAPI = (() => {
     orders: (merchant_id) => post("/orders", { merchant_id }),
     refund: (amount) => post("/refund", { amount }),
     dispute: (reason) => post("/dispute", { reason }),
+    // MCP explorer — endpoints + tools/list for every service
+    mcp: async () => (await fetch("/api/mcp")).json(),
     // scenario runner + LLM agent
     scenarios: async () => (await fetch("/api/scenarios")).json(),
     runScenario: (id) => post("/scenario", { id }),

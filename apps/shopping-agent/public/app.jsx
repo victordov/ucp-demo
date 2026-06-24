@@ -75,6 +75,8 @@ function App() {
   const [scenPasskey, setScenPasskey] = useState(false); // an enrolled passkey blocks unattended demos
   const [scenRunning, setScenRunning] = useState(null);
   const [scenResult, setScenResult] = useState(null);
+  const [mcpOpen, setMcpOpen] = useState(false); // MCP explorer panel
+  const [mcpData, setMcpData] = useState(null);   // { servers: [...] }
   const [llmAgent, setLlmAgent] = useState(false);
   const [llmChat, setLlmChat] = useState(false); // interactive LLM chat mode (vs scripted)
   const [autonomous, setAutonomous] = useState(false); // human-not-present: agent signs & pays under user-signed open mandates
@@ -169,6 +171,11 @@ function App() {
   useEffect(() => {
     if (scenOpen) API.passkeyStatus().then((s) => setScenPasskey(!!s.enrolled)).catch(() => setScenPasskey(false));
   }, [scenOpen]);
+
+  // MCP explorer — load every service's endpoints + tools the first time the panel opens.
+  useEffect(() => {
+    if (mcpOpen && !mcpData) API.mcp().then(setMcpData).catch(() => setMcpData({ servers: [], error: true }));
+  }, [mcpOpen]);
 
   async function removePasskeyForDemos() {
     try {
@@ -876,6 +883,7 @@ function App() {
           <button className="rail-btn active" title="Chat"><Icon name="chat" size={20} /></button>
           <button className="rail-btn" title="Orders (identity-linked)" onClick={showOrders}><Icon name="box" size={20} /></button>
           <button className={"rail-btn " + (scenOpen ? "active" : "")} title="Scenarios" onClick={() => setScenOpen((v) => !v)}><Icon name="layers" size={20} /></button>
+          <button className={"rail-btn " + (mcpOpen ? "active" : "")} title="MCP servers & tools" onClick={() => setMcpOpen((v) => !v)}><Icon name="grid" size={20} /></button>
         </div>
         <div className="rail-spacer" />
         <button className="rail-btn" title="Settings"><Icon name="settings" size={20} /></button>
@@ -970,6 +978,11 @@ function App() {
           <ScenarioPanel scenarios={scenarios} running={scenRunning} result={scenResult} llmAgent={llmAgent}
             passkeyEnrolled={scenPasskey} onRemovePasskey={removePasskeyForDemos}
             onRun={runScenario} onClose={() => setScenOpen(false)} onLlm={runLlmAgent} />
+        )}
+
+        {mcpOpen && (
+          <McpPanel data={mcpData} onClose={() => setMcpOpen(false)}
+            onRefresh={() => { setMcpData(null); API.mcp().then(setMcpData).catch(() => setMcpData({ servers: [], error: true })); }} />
         )}
       </main>
 
@@ -1098,6 +1111,58 @@ function ScenarioPanel({ scenarios, running, result, llmAgent, passkeyEnrolled, 
             <pre>{JSON.stringify(result.r.detail, null, 2)}</pre>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// MCP explorer — lists each application's MCP endpoint(s) and the tools it exposes
+// (fetched server-side from every service's `tools/list`). Mirrors the ScenarioPanel layout.
+function McpPanel({ data, onClose, onRefresh }) {
+  const servers = (data && data.servers) || [];
+  const totalTools = servers.reduce((n, s) => n + (s.ok ? s.tools.length : 0), 0);
+  return (
+    <div className="scen-scrim" onClick={(e) => { if (e.target.classList.contains("scen-scrim")) onClose(); }}>
+      <div className="scen-panel mcp-panel">
+        <div className="scen-head">
+          <div>
+            <b>MCP servers &amp; tools</b>
+            <div className="scen-sub">{data ? `${servers.length} applications · ${totalTools} tools · JSON-RPC 2.0 over MCP (tools/list)` : "Querying each service…"}</div>
+          </div>
+          <button className="insp-x" title="Refresh" onClick={onRefresh} style={{ marginLeft: "auto" }}><Icon name="refresh" size={15} /></button>
+          <button className="insp-x" onClick={onClose}><Icon name="x" size={15} /></button>
+        </div>
+        <div className="scen-body">
+          {!data && <div className="mcp-loading"><Icon name="refresh" size={16} className="spin" /> Querying tools/list…</div>}
+          {data && servers.length === 0 && <div className="mcp-loading">No MCP servers reachable — are the services running?</div>}
+          {servers.map((s) => (
+            <div className="mcp-card" key={s.app}>
+              <div className="mcp-card-head">
+                <span className={"mcp-status " + (s.ok ? "ok" : "down")} title={s.ok ? "reachable" : "unreachable"} />
+                <div className="mcp-card-info">
+                  <b>{s.app} <span className="mcp-port">:{s.port}</span></b>
+                  <span>{s.role}</span>
+                </div>
+                <span className="mcp-count">{s.ok ? `${s.tools.length} tools` : "down"}</span>
+              </div>
+              <div className="mcp-endpoints">
+                {s.endpoints.map((e) => <code key={e}>{e.replace(/^https?:\/\//, "")}</code>)}
+                {s.endpoints.length > 1 && <span className="mcp-note">all tenants expose the same tools</span>}
+              </div>
+              {!s.ok && s.error && <div className="mcp-err">⚠ {s.error}</div>}
+              {s.ok && (
+                <div className="mcp-tools">
+                  {s.tools.map((t) => (
+                    <div className="mcp-tool" key={t.name}>
+                      <code>{t.name}</code>
+                      <span>{t.description}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

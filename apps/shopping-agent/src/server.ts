@@ -343,6 +343,39 @@ api.post("/refund", handle(async (req) => refundOrder(getSession(req.body.sessio
 api.post("/dispute", handle(async (req) => fileDispute(getSession(req.body.session_id), req.body.reason)));
 api.post("/orders", handle(async (req) => listOrders(getSession(req.body.session_id), req.body.merchant_id ?? getSession(req.body.session_id).checkout?.merchant_id ?? "wavelength")));
 
+// MCP explorer — aggregate `tools/list` from every service's MCP endpoint so the
+// UI can show, in one place, which MCP servers exist and which tools each exposes.
+// `tools/list` needs no signature (see mcpHandler), and this runs server-side so the
+// browser makes a single same-origin call (no cross-origin/CORS to the other ports).
+async function listMcpTools(endpoint: string): Promise<{ ok: boolean; tools: any[]; error?: string }> {
+  try {
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    const j: any = await r.json();
+    if (j?.error) return { ok: false, tools: [], error: j.error.message ?? `rpc error ${j.error.code}` };
+    return { ok: true, tools: j?.result?.tools ?? [] };
+  } catch (e: any) {
+    return { ok: false, tools: [], error: e?.message ?? "unreachable" };
+  }
+}
+
+api.get("/mcp", async (_req, res) => {
+  const apps = [
+    { app: "Shopping Agent", role: "UCP Platform / AP2 Shopping Agent — “Shoppy”", port: PORTS.shoppingAgent, endpoints: [`${URLS.shoppingAgent}/mcp`] },
+    { app: "Merchant Portal", role: "4 UCP Businesses (multi-tenant) + Merchant Agent", port: PORTS.merchantPortal, endpoints: MERCHANT_IDS.map((id) => merchantMcpUrl(id)) },
+    { app: "Credentials Provider", role: "AP2 Credentials Provider — “Walletly”", port: PORTS.credentialsProvider, endpoints: [`${URLS.credentialsProvider}/mcp`] },
+    { app: "Payment Provider", role: "PSP / AP2 Merchant Payment Processor — “PayStream”", port: PORTS.paymentProvider, endpoints: [`${URLS.paymentProvider}/mcp`] },
+  ];
+  // Multi-tenant endpoints of one app share the same tool set — probe the first.
+  const servers = await Promise.all(
+    apps.map(async (a) => ({ ...a, ...(await listMcpTools(a.endpoints[0])) }))
+  );
+  res.json({ servers });
+});
+
 // Scenario runner — success & failure flows for the demo.
 api.get("/scenarios", (_req, res) => res.json({ scenarios: SCENARIOS, llm_agent: llmAgentEnabled() }));
 api.post("/scenario", handle(async (req) => runScenario(getSession(req.body.session_id), String(req.body.id))));
